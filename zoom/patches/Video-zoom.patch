@@ -1,8 +1,24 @@
+diff --git a/res/layout/subtitle_delay_picker_dialog.xml b/res/layout/subtitle_delay_picker_dialog.xml
+index 32b95b5..6f466a9 100644
+--- a/res/layout/subtitle_delay_picker_dialog.xml
++++ b/res/layout/subtitle_delay_picker_dialog.xml
+@@ -29,6 +29,11 @@
+         android:layout_gravity="center_horizontal"
+         android:layout_width="wrap_content"
+         android:layout_height="wrap_content" />
++    <CheckBox
++        android:id="@+id/save_setting"
++        android:layout_width="match_parent"
++        android:layout_height="wrap_content"
++        android:text="@string/keep_setting" />
+     <!-- simple listDivider, should be using current Theme -->
+     <ImageView
+         android:layout_width="fill_parent"
 diff --git a/res/values-zh-rCN/strings.xml b/res/values-zh-rCN/strings.xml
-index fa0b26157f7568cba1476fc6792b62463ec77c09..7892dca212276947bbb28496d5e5e6a861e50f88 100644
+index fa0b261..c9f98ec 100644
 --- a/res/values-zh-rCN/strings.xml
 +++ b/res/values-zh-rCN/strings.xml
-@@ -571,10 +571,14 @@
+@@ -571,6 +571,8 @@
      <string name="notifications_alerts">仅通知提醒</string>
      <string name="notifications_none">没有通知</string>
      <string name="pref_format_mode_title">格式</string>
@@ -11,14 +27,8 @@ index fa0b26157f7568cba1476fc6792b62463ec77c09..7892dca212276947bbb28496d5e5e6a8
      <string name="format_fullscreen">全屏</string>
      <string name="format_optimized">优化</string>
      <string name="format_original">原始比例</string>
-     <string name="format_stretched">拉伸</string>
-+    <string name="format_fit_height">适应高度</string>
-+    <string name="format_fit_either">等比填满（裁边）</string>
-     <string name="format_43">4:3</string>
-     <string name="format_169">16:9</string>
-     <string name="format_185">1.85:1</string>
 diff --git a/res/values-zh-rTW/strings.xml b/res/values-zh-rTW/strings.xml
-index d7c66ff04198ef53b77ad5c5674b0b60b2281441..0498e1986c475b92976f8524b42a6284ce6b6205 100644
+index d7c66ff..0498e19 100644
 --- a/res/values-zh-rTW/strings.xml
 +++ b/res/values-zh-rTW/strings.xml
 @@ -509,6 +509,8 @@
@@ -30,24 +40,11 @@ index d7c66ff04198ef53b77ad5c5674b0b60b2281441..0498e1986c475b92976f8524b42a6284
      <string name="format_fullscreen">全螢幕</string>
      <string name="format_optimized">最佳化</string>
      <string name="format_original">原始</string>
-diff --git a/res/values/arrays.xml b/res/values/arrays.xml
-index 5e87324a826edf7f8ab61bcf5cebe153d507cb57..d5e541d7437d046e5f3d4c87e051d2b3affc8d78 100644
---- a/res/values/arrays.xml
-+++ b/res/values/arrays.xml
-@@ -72,6 +72,8 @@
-         <item>@string/format_185</item>
-         <item>@string/format_239</item>
-         <item>@string/format_optimized</item>
-+        <item>@string/format_fit_height</item>
-+        <item>@string/format_fit_either</item>
-     </string-array>
-     <string-array name="pref_play_mode_entries" translatable="false">
-         <item>@string/pref_play_mode_entry_single</item>
 diff --git a/res/values/strings.xml b/res/values/strings.xml
-index 91f7fbcdcad013f2e2846526773a4de1166a96c9..3e735a8e6eba8d149a3a1dae85f8ebb921f813fc 100644
+index 91f7fbc..267e796 100644
 --- a/res/values/strings.xml
 +++ b/res/values/strings.xml
-@@ -642,10 +642,14 @@
+@@ -642,6 +642,8 @@
      <string name="notifications_none">No notifications</string>
  
      <string name="pref_format_mode_title">Format</string>
@@ -56,14 +53,8 @@ index 91f7fbcdcad013f2e2846526773a4de1166a96c9..3e735a8e6eba8d149a3a1dae85f8ebb9
      <string name="format_fullscreen">Fullscreen</string>
      <string name="format_optimized">Optimized</string>
      <string name="format_original">Original</string>
-     <string name="format_stretched">Stretched</string>
-+    <string name="format_fit_height">Fit height</string>
-+    <string name="format_fit_either">Fit either width or height</string>
-     <string name="format_43">4:3</string>
-     <string name="format_169">16:9</string>
-     <string name="format_185">1.85:1</string>
 diff --git a/src/main/java/com/archos/mediacenter/video/player/PlayerActivity.java b/src/main/java/com/archos/mediacenter/video/player/PlayerActivity.java
-index 476d75842844ff030d68be3d6526133b1eacf524..2a4b51b43ec9111e60bc5b3f7ea719b23fa41d67 100644
+index 476d758..99debdc 100644
 --- a/src/main/java/com/archos/mediacenter/video/player/PlayerActivity.java
 +++ b/src/main/java/com/archos/mediacenter/video/player/PlayerActivity.java
 @@ -233,6 +233,8 @@ public class PlayerActivity extends AppCompatActivity implements PlayerControlle
@@ -92,7 +83,29 @@ index 476d75842844ff030d68be3d6526133b1eacf524..2a4b51b43ec9111e60bc5b3f7ea719b2
  
          //Set up projector mode if we need it, otherwise dont even call.
          if (mPreferences.getBoolean(KEY_PLAYER_PROJECTOR_MODE, false)) mSurfaceController.setProjectorMode(true);
-@@ -2476,6 +2481,22 @@ public class PlayerActivity extends AppCompatActivity implements PlayerControlle
+@@ -1847,11 +1852,19 @@ public class PlayerActivity extends AppCompatActivity implements PlayerControlle
+                 if (v instanceof TVMenuItem) {
+                     tvmenu.unCheckAll();
+                     ((TVMenuItem) v).setChecked(true);
+-                    PlayerActivity.this.onDelayChange(null, mVideoInfo.subtitleDelay, tvmenu.getItemPostion(v) - 3);
++                    PlayerActivity.this.onDelayChange(null, null, tvmenu.getItemPostion(v) - 3);
+                 }
+             }
+         });
+-        tvPicker.init(mVideoInfo.subtitleDelay, new SubtitleDelayPickerAbstract.OnDelayChangedListener() {
++        // Keep this row after the ratios so their existing positions remain unchanged.
++        final TVMenuItem keepDelay = tvmenu.createAndAddTVSwitchableMenuItem(getString(R.string.keep_setting),
++                SubtitleDelayPreference.isEnabled(mPreferences));
++        keepDelay.setOnClickListener(v -> {
++            boolean keep = !SubtitleDelayPreference.isEnabled(mPreferences);
++            setKeepSubtitleDelay(keep);
++            keepDelay.setChecked(keep);
++        });
++        tvPicker.init(getCurrentSubtitleDelay(), new SubtitleDelayPickerAbstract.OnDelayChangedListener() {
+             @Override
+             public void onDelayChanged(SubtitleDelayPickerAbstract view, int delay) {
+                 PlayerActivity.this.onDelayChange(null, delay, mVideoInfo.subtitleRatio);
+@@ -2476,6 +2489,22 @@ public class PlayerActivity extends AppCompatActivity implements PlayerControlle
          }
      }
  
@@ -115,16 +128,14 @@ index 476d75842844ff030d68be3d6526133b1eacf524..2a4b51b43ec9111e60bc5b3f7ea719b2
      public void createPlayerTVMenu() {
          if (mPlayerController != null && mPlayerController.getTVMenuAdapter() != null) {
              TVMenuAdapter tma = mPlayerController.getTVMenuAdapter();
-@@ -2579,7 +2600,37 @@ public class PlayerActivity extends AppCompatActivity implements PlayerControlle
+@@ -2579,18 +2608,49 @@ public class PlayerActivity extends AppCompatActivity implements PlayerControlle
                                         getResources().getString( R.string.pref_format_mode_title));
              final TVMenu tvmFormat = tma.createTVMenu();
  
 -            tvmFormat.setItems(R.array.pref_format_mode_entries, mSurfaceController.getCurrentFormat(), true);
-+            tvmFormat.setItems(R.array.pref_format_mode_entries,
-+                    mSurfaceController.isManualZoomActive() ? -1
-+                            : VideoDisplayMode.toTvMenuPosition(mSurfaceController.getCurrentFormat()), true);
 +            final TVMenuItem manualZoomItem = tvmFormat.createAndAddTVMenuItem(manualZoomLabel(),
 +                    true, mSurfaceController.isManualZoomActive());
++            tvmFormat.setItems(R.array.pref_format_mode_entries, -1, true);
 +            manualZoomItem.setOnKeyListener((view, keyCode, event) -> {
 +                if (keyCode != KeyEvent.KEYCODE_DPAD_LEFT && keyCode != KeyEvent.KEYCODE_DPAD_RIGHT)
 +                    return false;
@@ -145,6 +156,7 @@ index 476d75842844ff030d68be3d6526133b1eacf524..2a4b51b43ec9111e60bc5b3f7ea719b2
 +                        selected.setChecked(true);
 +                }
 +            };
++            mRefreshTvFormatMenu.run();
 +            // Keep remote focus on the TVMenuItem rather than the inner RadioButton, so
 +            // DPAD and the checkmark share the same row target (touch is normalized below).
 +            for (int i = 0; tvmFormat.getItem(i) != null; i++) {
@@ -154,7 +166,24 @@ index 476d75842844ff030d68be3d6526133b1eacf524..2a4b51b43ec9111e60bc5b3f7ea719b2
  
  
              if (mSurfaceController.getMax() < 3) {
-@@ -2602,8 +2653,16 @@ public class PlayerActivity extends AppCompatActivity implements PlayerControlle
+-                tvmFormat.getItem(2).setVisibility(View.GONE);
++                int position = VideoDisplayMode.toTvMenuPosition(VideoDisplayMode.FULL_SCREEN);
++                tvmFormat.getItem(position).setVisibility(View.GONE);
+                 if (tvmFormat.getSlaveView() != null)
+-                    ((TVMenu)tvmFormat.getSlaveView()).getItem(2).setVisibility(View.GONE);
++                    ((TVMenu)tvmFormat.getSlaveView()).getItem(position).setVisibility(View.GONE);
+             }
+             if (mSurfaceController.getMax() < 2) {
+-                tvmFormat.getItem(1).setVisibility(View.GONE);
++                int position = VideoDisplayMode.toTvMenuPosition(VideoDisplayMode.STRETCH_XY);
++                tvmFormat.getItem(position).setVisibility(View.GONE);
+                 if (tvmFormat.getSlaveView() != null)
+-                    ((TVMenu)tvmFormat.getSlaveView()).getItem(1).setVisibility(View.GONE);
++                    ((TVMenu)tvmFormat.getSlaveView()).getItem(position).setVisibility(View.GONE);
+             }
+             final View vPicInPic;
+             if(Build.VERSION.SDK_INT>=Build.VERSION_CODES.N && TVUtils.isTV(this)) {
+@@ -2602,8 +2662,16 @@ public class PlayerActivity extends AppCompatActivity implements PlayerControlle
                  @SuppressWarnings("deprecation") // enterPictureInPictureMode(): API 26+ uses PictureInPictureParams
                  @Override
                  public void onClick(View v) {
@@ -173,7 +202,7 @@ index 476d75842844ff030d68be3d6526133b1eacf524..2a4b51b43ec9111e60bc5b3f7ea719b2
                          mPlayerController.showTVMenu(false);
                          if (Build.VERSION.SDK_INT>=26) {
                              PictureInPictureParams.Builder builder = new PictureInPictureParams.Builder();
-@@ -2627,11 +2686,10 @@ public class PlayerActivity extends AppCompatActivity implements PlayerControlle
+@@ -2627,11 +2695,10 @@ public class PlayerActivity extends AppCompatActivity implements PlayerControlle
                              enterPictureInPictureMode();
                          }
                      }
@@ -189,7 +218,89 @@ index 476d75842844ff030d68be3d6526133b1eacf524..2a4b51b43ec9111e60bc5b3f7ea719b2
                      }
                  }
              });
-@@ -4915,7 +4973,9 @@ public class PlayerActivity extends AppCompatActivity implements PlayerControlle
+@@ -3381,10 +3448,12 @@ public class PlayerActivity extends AppCompatActivity implements PlayerControlle
+                 if (track == null)
+                     return;
+                 boolean hasRatio = track.isExternal;
+-                mDialog = new SubtitleDelayPickerDialog(this, this, mVideoInfo.subtitleDelay, mVideoInfo.subtitleRatio, hasRatio);
++                SubtitleDelayPickerDialog subtitleDelayPickerDialog = new SubtitleDelayPickerDialog(
++                        this, this, getCurrentSubtitleDelay(), mVideoInfo.subtitleRatio, hasRatio);
++                subtitleDelayPickerDialog.setKeepSetting(SubtitleDelayPreference.isEnabled(mPreferences),
++                        (button, keep) -> setKeepSubtitleDelay(keep));
++                mDialog = subtitleDelayPickerDialog;
+                 mPlayerController.hide();
+-                SubtitleDelayPickerDialog subtitleDelayPickerDialog = (SubtitleDelayPickerDialog) mDialog;
+-                subtitleDelayPickerDialog.updateDelay(mVideoInfo.subtitleDelay);
+                 break;
+             case DIALOG_SUBTITLE_SETTINGS:
+                 mDialog = new SubtitleSettingsDialog(this, mSubtitleManager);
+@@ -3955,19 +4024,39 @@ public class PlayerActivity extends AppCompatActivity implements PlayerControlle
+         return msgBuilder.toString();
+     }
+ 
++    private int getCurrentSubtitleDelay() {
++        int fileDelay = mVideoInfo != null ? mVideoInfo.subtitleDelay : 0;
++        PlayerService service = PlayerService.sPlayerService;
++        return service != null ? service.getEffectiveSubtitleDelay(fileDelay)
++                : SubtitleDelayPreference.resolve(mPreferences, fileDelay);
++    }
++
++    private void setKeepSubtitleDelay(boolean keep) {
++        int currentDelay = getCurrentSubtitleDelay();
++        PlayerService service = PlayerService.sPlayerService;
++        if (service != null) service.setKeepSubtitleDelay(keep, currentDelay);
++        else SubtitleDelayPreference.setEnabled(mPreferences, keep, currentDelay);
++    }
++
+     /* SubtitleDelayPickerDialog.OnDelayChangeListener */
+-    public void onDelayChange(SubtitleDelayPickerAbstract view, int delay, int ratio) {
+-        boolean delayChanged = delay != mVideoInfo.subtitleDelay;
+-        boolean ratioChanged = ratio != mVideoInfo.subtitleRatio;
+-        mVideoInfo.subtitleDelay = delay;
+-        mVideoInfo.subtitleRatio = ratio;
+-        if (delayChanged || ratioChanged) {
+-            mPlayer.setSubtitleDelay(mVideoInfo.subtitleDelay);
+-            mPlayer.setSubtitleRatio(mVideoInfo.subtitleRatio);
+-            // Save the subtitle delay and ratio to the database for persistence across resume
+-            persistVideoInfo();
+-            if (log.isDebugEnabled()) log.debug("onDelayChange: saved subtitleDelay={} subtitleRatio={} to database", mVideoInfo.subtitleDelay, mVideoInfo.subtitleRatio);
++    public void onDelayChange(SubtitleDelayPickerAbstract view, Integer editedDelay, int ratio) {
++        if (mVideoInfo == null || mPlayer == null) return;
++        boolean persistFile = false;
++        if (editedDelay != null && editedDelay != getCurrentSubtitleDelay()) {
++            PlayerService service = PlayerService.sPlayerService;
++            if (service != null) service.clearTemporarySubtitleDelay();
++            if (!SubtitleDelayPreference.saveIfEnabled(mPreferences, editedDelay)) {
++                mVideoInfo.subtitleDelay = editedDelay;
++                persistFile = true;
++            }
++            mPlayer.setSubtitleDelay(editedDelay);
++        }
++        if (ratio != mVideoInfo.subtitleRatio) {
++            mVideoInfo.subtitleRatio = ratio;
++            mPlayer.setSubtitleRatio(ratio);
++            persistFile = true;
+         }
++        if (persistFile) persistVideoInfo();
+     }
+ 
+     /* AudioDelayPickerDialog.OnAudioDelayChangeListener */
+@@ -4144,10 +4233,10 @@ public class PlayerActivity extends AppCompatActivity implements PlayerControlle
+     }
+ 
+     public void setSubtitleDelay(int delay) {
+-        if (mSubtitleInfoController.getTrackCount() > 1) {
+-            mVideoInfo.subtitleDelay += delay;
+-            mPlayer.setSubtitleDelay(mVideoInfo.subtitleDelay);
+-            mPlayerController.updateToast("Subtitle delay: " + mVideoInfo.subtitleDelay + "ms");
++        if (mVideoInfo != null && mSubtitleInfoController.getTrackCount() > 1) {
++            int newDelay = getCurrentSubtitleDelay() + delay;
++            onDelayChange(null, newDelay, mVideoInfo.subtitleRatio);
++            mPlayerController.updateToast("Subtitle delay: " + newDelay + "ms");
+         }
+     }
+ 
+@@ -4915,7 +5004,9 @@ public class PlayerActivity extends AppCompatActivity implements PlayerControlle
              SharedPreferences.Editor editor = mPreferences.edit();
              editor.putString(KEY_PLAYER_FORMAT, String.valueOf(fmt));
              editor.putString(KEY_PLAYER_AUTO_FORMAT, String.valueOf(autoFmt));
@@ -199,28 +310,207 @@ index 476d75842844ff030d68be3d6526133b1eacf524..2a4b51b43ec9111e60bc5b3f7ea719b2
              // Update the subtitle layout when the video format changes
              mSubtitleManager.updateSubtitleLayout();
          }
-diff --git a/src/main/java/com/archos/mediacenter/video/player/PlayerController.java b/src/main/java/com/archos/mediacenter/video/player/PlayerController.java
-index a416e8bb35fa4bc91031ae66e827b3f6d31cb179..c9b6d78e60042ec99c06d9bda965682d1565c53b 100644
---- a/src/main/java/com/archos/mediacenter/video/player/PlayerController.java
-+++ b/src/main/java/com/archos/mediacenter/video/player/PlayerController.java
-@@ -1482,8 +1482,12 @@ public class PlayerController implements View.OnTouchListener, OnGenericMotionLi
-                 mFormatButton.setImageResource(mBarXYIconResource);
-                 break;
-             case SurfaceController.VideoFormat.FULL_SCREEN:
-+            case SurfaceController.VideoFormat.FIT_EITHER:
-                 mFormatButton.setImageResource(R.drawable.video_format_arrow_xy);
-                 break;
-+            case SurfaceController.VideoFormat.FIT_HEIGHT:
-+                mFormatButton.setImageResource(R.drawable.video_format_arrow_vertical);
-+                break;
-             case SurfaceController.VideoFormat.FORCE43:
-                 mFormatButton.setImageResource(R.drawable.video_format_43);
-                 break;
+diff --git a/src/main/java/com/archos/mediacenter/video/player/PlayerService.java b/src/main/java/com/archos/mediacenter/video/player/PlayerService.java
+index bf316d2..7a8dd78 100644
+--- a/src/main/java/com/archos/mediacenter/video/player/PlayerService.java
++++ b/src/main/java/com/archos/mediacenter/video/player/PlayerService.java
+@@ -202,6 +202,8 @@ public class PlayerService extends Service implements Player.Listener, IndexHelp
+         private int lastKnownPositionMs = LAST_POSITION_UNKNOWN;
+         private boolean completed;
+         private boolean startPositionApplied;
++        // Turning off Keep setting affects future videos, not the current preview.
++        private Integer temporarySubtitleDelay;
+ 
+         private void reset(Uri newUri, String newLaunchGeneration) {
+             uri = newUri;
+@@ -213,6 +215,7 @@ public class PlayerService extends Service implements Player.Listener, IndexHelp
+             lastKnownPositionMs = LAST_POSITION_UNKNOWN;
+             completed = false;
+             startPositionApplied = false;
++            temporarySubtitleDelay = null;
+         }
+ 
+         private void setCandidate(ResumeSource source, int positionMs) {
+@@ -2267,6 +2270,19 @@ public class PlayerService extends Service implements Player.Listener, IndexHelp
+         }
+     }
+ 
++    int getEffectiveSubtitleDelay(int fileDelay) {
++        return SubtitleDelayPreference.resolve(mPreferences, fileDelay, mPlaybackSession.temporarySubtitleDelay);
++    }
++
++    void setKeepSubtitleDelay(boolean enabled, int currentDelay) {
++        mPlaybackSession.temporarySubtitleDelay = enabled ? null : currentDelay;
++        SubtitleDelayPreference.setEnabled(mPreferences, enabled, currentDelay);
++    }
++
++    void clearTemporarySubtitleDelay() {
++        mPlaybackSession.temporarySubtitleDelay = null;
++    }
++
+     @Override
+     public void onSubtitleMetadataUpdated(VideoMetadata vMetadata, int newSubtitleTrack) {
+         // note: if mIsPreparingSubs = true, onSubtitleMetadataUpdated can be called even if in not final state
+@@ -2494,8 +2510,9 @@ public class PlayerService extends Service implements Player.Listener, IndexHelp
+                 } else {
+                     if (log.isDebugEnabled()) log.debug("onSubtitleMetadataUpdated: setSubtitleTrack done to track {}", mVideoInfo.subtitleTrack);
+                 }
+-                if (log.isDebugEnabled()) log.debug("onSubtitleMetadataUpdated: subtitleDelay = {}", mVideoInfo.subtitleDelay);
+-                mPlayer.setSubtitleDelay(mVideoInfo.subtitleDelay);
++                int effectiveDelay = getEffectiveSubtitleDelay(mVideoInfo.subtitleDelay);
++                if (log.isDebugEnabled()) log.debug("onSubtitleMetadataUpdated: subtitleDelay = {}", effectiveDelay);
++                mPlayer.setSubtitleDelay(effectiveDelay);
+                 if (mVideoInfo.subtitleRatio >= 0) {
+                     mPlayer.setSubtitleRatio(mVideoInfo.subtitleRatio);
+                 }
+diff --git a/src/main/java/com/archos/mediacenter/video/player/SubtitleDelayPickerDialog.java b/src/main/java/com/archos/mediacenter/video/player/SubtitleDelayPickerDialog.java
+index 19f58b2..d5d4ac6 100644
+--- a/src/main/java/com/archos/mediacenter/video/player/SubtitleDelayPickerDialog.java
++++ b/src/main/java/com/archos/mediacenter/video/player/SubtitleDelayPickerDialog.java
+@@ -29,6 +29,8 @@ import android.view.WindowManager;
+ import android.widget.AdapterView;
+ import android.widget.AdapterView.OnItemSelectedListener;
+ import android.widget.ArrayAdapter;
++import android.widget.CheckBox;
++import android.widget.CompoundButton;
+ import android.widget.Spinner;
+ 
+ import androidx.appcompat.app.AlertDialog;
+@@ -51,7 +53,9 @@ public class SubtitleDelayPickerDialog extends AlertDialog implements OnClickLis
+     private final SubtitleDelayPickerAbstract mSubtitleDelayPicker;
+     private final OnDelayChangeListener mCallBack;
+     private final Context mContext;
+-    private int mRatio = 0;
++    private int mRatio;
++    private boolean mDelayEdited;
++    private final CheckBox mKeepSetting;
+ 
+     private final Handler mHandler = new Handler(Looper.getMainLooper()) {
+         @Override
+@@ -83,6 +87,8 @@ public class SubtitleDelayPickerDialog extends AlertDialog implements OnClickLis
+         setView(view);
+         mSubtitleDelayPicker = (SubtitleDelayPickerAbstract) view.findViewById(R.id.subtitleDelayPicker);
+         mSubtitleDelayPicker.init(delay, this);
++        mKeepSetting = (CheckBox) view.findViewById(R.id.save_setting);
++        mRatio = ratio;
+         // Setup Spinner
+         Spinner sp = (Spinner) view.findViewById(R.id.subtitle_delay_ratio_spinner);
+         ArrayAdapter<CharSequence> adapter = ArrayAdapter.createFromResource(
+@@ -98,32 +104,39 @@ public class SubtitleDelayPickerDialog extends AlertDialog implements OnClickLis
+         setCanceledOnTouchOutside(true);
+     }
+ 
++    void setKeepSetting(boolean checked, CompoundButton.OnCheckedChangeListener listener) {
++        mKeepSetting.setChecked(checked);
++        mKeepSetting.setOnCheckedChangeListener((button, keep) -> {
++            // Apply real pending picker edits under the old setting before switching.
++            dispatchChanges();
++            listener.onCheckedChanged(button, keep);
++        });
++    }
++
++    private void dispatchChanges() {
++        Integer editedDelay = mDelayEdited ? mSubtitleDelayPicker.getDelay() : null;
++        mDelayEdited = false;
++        if (mCallBack != null)
++            mCallBack.onDelayChange(mSubtitleDelayPicker, editedDelay, mRatio);
++    }
++
+     /*package*/ public void handleMessage(Message msg) {
+-        switch(msg.what) {
+-            case CHANGE_DELAY:
+-                if (mCallBack != null) {
+-                    mCallBack.onDelayChange(mSubtitleDelayPicker, mSubtitleDelayPicker.getDelay(), mRatio);
+-                }
+-            break;
+-        }
++        if (msg.what == CHANGE_DELAY) dispatchChanges();
+     }
+ 
+     @Override
+     public void onStop() {
+         super.onStop();
+         mHandler.removeCallbacksAndMessages(null);
+-        if (mCallBack != null) {
+-            mCallBack.onDelayChange(mSubtitleDelayPicker, mSubtitleDelayPicker.getDelay(), mRatio);
+-        }
++        dispatchChanges();
+     }
+ 
+     public void onClick(DialogInterface dialog, int which) {
+-        if (mCallBack != null) {
+-            mCallBack.onDelayChange(mSubtitleDelayPicker, mSubtitleDelayPicker.getDelay(), mRatio);
+-        }
++        dispatchChanges();
+     }
+ 
+     public void onDelayChanged(SubtitleDelayPickerAbstract view, int delay) {
++        mDelayEdited = true;
+         updateTitle(delay);
+         mHandler.removeMessages(CHANGE_DELAY);
+         Message msg = mHandler.obtainMessage(CHANGE_DELAY);
+diff --git a/src/main/java/com/archos/mediacenter/video/player/SubtitleDelayPickerDialogInterface.java b/src/main/java/com/archos/mediacenter/video/player/SubtitleDelayPickerDialogInterface.java
+index d7ed2e4..26f63b8 100644
+--- a/src/main/java/com/archos/mediacenter/video/player/SubtitleDelayPickerDialogInterface.java
++++ b/src/main/java/com/archos/mediacenter/video/player/SubtitleDelayPickerDialogInterface.java
+@@ -27,7 +27,7 @@ public interface SubtitleDelayPickerDialogInterface {
+ 
+    
+        public interface OnDelayChangeListener {
+-           void onDelayChange(SubtitleDelayPickerAbstract mSubtitleDelayPicker, int delay, int ratio);
++           void onDelayChange(SubtitleDelayPickerAbstract mSubtitleDelayPicker, Integer editedDelay, int ratio);
+        }
+        void handleMessage(Message msg);
+        public void onStop();
+diff --git a/src/main/java/com/archos/mediacenter/video/player/SubtitleDelayPreference.java b/src/main/java/com/archos/mediacenter/video/player/SubtitleDelayPreference.java
+new file mode 100644
+index 0000000..1db2b5e
+--- /dev/null
++++ b/src/main/java/com/archos/mediacenter/video/player/SubtitleDelayPreference.java
+@@ -0,0 +1,38 @@
++/* SPDX-License-Identifier: Apache-2.0 */
++package com.archos.mediacenter.video.player;
++
++import android.content.SharedPreferences;
++
++/** App-wide subtitle offset, separate from each video's existing database value. */
++final class SubtitleDelayPreference {
++    private static final String KEY_ENABLED = "player_pref_keep_subtitle_delay";
++    private static final String KEY_DELAY = "player_pref_saved_subtitle_delay_ms";
++
++    private SubtitleDelayPreference() {}
++
++    static boolean isEnabled(SharedPreferences preferences) {
++        return preferences.getBoolean(KEY_ENABLED, true);
++    }
++
++    static int resolve(SharedPreferences preferences, int fileDelay) {
++        return resolve(preferences, fileDelay, null);
++    }
++
++    static int resolve(SharedPreferences preferences, int fileDelay, Integer sessionDelay) {
++        if (isEnabled(preferences)) return preferences.getInt(KEY_DELAY, fileDelay);
++        return sessionDelay != null ? sessionDelay : fileDelay;
++    }
++
++    static boolean saveIfEnabled(SharedPreferences preferences, int delay) {
++        if (!isEnabled(preferences)) return false;
++        preferences.edit().putInt(KEY_DELAY, delay).apply();
++        return true;
++    }
++
++    static void setEnabled(SharedPreferences preferences, boolean enabled, int currentDelay) {
++        SharedPreferences.Editor editor = preferences.edit().putBoolean(KEY_ENABLED, enabled);
++        if (enabled) editor.putInt(KEY_DELAY, currentDelay);
++        else editor.remove(KEY_DELAY);
++        editor.apply();
++    }
++}
 diff --git a/src/main/java/com/archos/mediacenter/video/player/SurfaceController.java b/src/main/java/com/archos/mediacenter/video/player/SurfaceController.java
-index aca6701742a51507ef7399090c32156044472aaf..480378ae5dffcd235e5c6666f8eae86774b350b1 100644
+index aca6701..9c86a87 100644
 --- a/src/main/java/com/archos/mediacenter/video/player/SurfaceController.java
 +++ b/src/main/java/com/archos/mediacenter/video/player/SurfaceController.java
-@@ -41,34 +41,30 @@ public class SurfaceController {
+@@ -41,51 +41,39 @@ public class SurfaceController {
      }
  
      public class VideoFormat {
@@ -245,8 +535,6 @@ index aca6701742a51507ef7399090c32156044472aaf..480378ae5dffcd235e5c6666f8eae867
 +        public static final int FORCE185 = VideoDisplayMode.FORCE185;
 +        public static final int FORCE239 = VideoDisplayMode.FORCE239;
 +        public static final int AUTO = VideoDisplayMode.AUTO;
-+        public static final int FIT_HEIGHT = VideoDisplayMode.FIT_HEIGHT;
-+        public static final int FIT_EITHER = VideoDisplayMode.FIT_EITHER;
 +
          public static final double VIDEO_FORMAT_AUTO_THRES = 0.7;
  
@@ -266,12 +554,13 @@ index aca6701742a51507ef7399090c32156044472aaf..480378ae5dffcd235e5c6666f8eae867
          }
          private void setFmt(int fmt) {
 -            for (int i = 0; i < max; ++i) {
-+            for (int i = 0; i < mode.length; ++i) {
-                 if (mode[i] == fmt) {
-                     idx = i;
-                     return;
-@@ -77,15 +73,15 @@ public class SurfaceController {
-             idx = 0;
+-                if (mode[i] == fmt) {
+-                    idx = i;
+-                    return;
+-                }
+-            }
+-            idx = 0;
++            idx = VideoDisplayMode.indexForStoredFormat(mode, fmt);
          }
          private int switchFmt() {
 -            idx = (idx + 1) % max;
@@ -289,7 +578,7 @@ index aca6701742a51507ef7399090c32156044472aaf..480378ae5dffcd235e5c6666f8eae867
          }
      }
      public interface Listener {
-@@ -106,8 +102,10 @@ public class SurfaceController {
+@@ -106,8 +94,10 @@ public class SurfaceController {
      private int         mVideoWidth = 0;
      private int         mVideoHeight = 0;
      private double      mVideoAspect = 1.0f;
@@ -302,7 +591,7 @@ index aca6701742a51507ef7399090c32156044472aaf..480378ae5dffcd235e5c6666f8eae867
      private int         mSurfaceWidth = 0;
      private int         mSurfaceHeight = 0;
      public boolean willStretchY;
-@@ -334,8 +332,25 @@ public class SurfaceController {
+@@ -334,8 +324,25 @@ public class SurfaceController {
          }
      }
  
@@ -328,7 +617,7 @@ index aca6701742a51507ef7399090c32156044472aaf..480378ae5dffcd235e5c6666f8eae867
          getVideoFormat().switchFmt();
          updateSurface();
          if (mSurfaceListener != null) {
-@@ -344,6 +359,7 @@ public class SurfaceController {
+@@ -344,6 +351,7 @@ public class SurfaceController {
      }
      public void setVideoFormat(int fmt) {
          if (log.isDebugEnabled()) log.debug("setVideoFormat fmt={}", fmt);
@@ -336,7 +625,7 @@ index aca6701742a51507ef7399090c32156044472aaf..480378ae5dffcd235e5c6666f8eae867
          getVideoFormat().setFmt(fmt);
          updateSurface();
          if (mSurfaceListener != null) {
-@@ -462,7 +478,9 @@ public class SurfaceController {
+@@ -462,7 +470,9 @@ public class SurfaceController {
          
          //Do the Aspect Ratio Override if required.
          fmt = getVideoFormat().getFmt();
@@ -347,7 +636,7 @@ index aca6701742a51507ef7399090c32156044472aaf..480378ae5dffcd235e5c6666f8eae867
              case VideoFormat.FORCE43 -> 4f / 3f;
              case VideoFormat.FORCE169 -> 16f / 9f;
              case VideoFormat.FORCE185 -> 1.85f;
-@@ -476,7 +494,11 @@ public class SurfaceController {
+@@ -476,7 +486,11 @@ public class SurfaceController {
          if (log.isDebugEnabled()) log.debug("CONFIG updateSurface: sar={}, ar={}, dar={}, dcar={}", sar, ar, dar, dcar);
  
          //Apply any Video Format Effects, stretch to the right size.
@@ -360,27 +649,12 @@ index aca6701742a51507ef7399090c32156044472aaf..480378ae5dffcd235e5c6666f8eae867
              case VideoFormat.ORIGINAL, VideoFormat.FORCE43, VideoFormat.FORCE169, VideoFormat.FORCE185, VideoFormat.FORCE239:
                  if (dcar < ar) {
                      //4:3 movie on 16:9 screen or 16:9 movie on portrait screen
-@@ -521,6 +543,14 @@ public class SurfaceController {
-                 //if (log.isDebugEnabled()) log.debug("CONFIG updateSurface: VideoFormat.FULL_SCREEN dc=({},{}), crop=({},{})", dcw, dch, cropW, cropH);
-                 break;
-             }
-+            case VideoFormat.FIT_HEIGHT, VideoFormat.FIT_EITHER: {
-+                VideoZoomLayout.Size size = fmt == VideoFormat.FIT_HEIGHT
-+                        ? VideoZoomLayout.fitHeight(dcw, dch, ar)
-+                        : VideoZoomLayout.cover(dcw, dch, ar);
-+                dcw = size.width;
-+                dch = size.height;
-+                break;
-+            }
-             case VideoFormat.AUTO: {
-                 //cropW = 1.0f;
-                 //cropH = 1.0f;
 diff --git a/src/main/java/com/archos/mediacenter/video/player/VideoDisplayMode.java b/src/main/java/com/archos/mediacenter/video/player/VideoDisplayMode.java
 new file mode 100644
-index 0000000000000000000000000000000000000000..e268b772e3e1acbc475669f0d044184435d29470
+index 0000000..fd87375
 --- /dev/null
 +++ b/src/main/java/com/archos/mediacenter/video/player/VideoDisplayMode.java
-@@ -0,0 +1,47 @@
+@@ -0,0 +1,57 @@
 +/*
 + * SPDX-License-Identifier: Apache-2.0
 + */
@@ -396,13 +670,14 @@ index 0000000000000000000000000000000000000000..e268b772e3e1acbc475669f0d0441844
 +    static final int FORCE185 = 5;
 +    static final int FORCE239 = 6;
 +    static final int AUTO = 7;
-+    static final int FIT_HEIGHT = 8;
-+    static final int FIT_EITHER = 9;
++    // IDs 8 and 9 previously selected custom modes; never reuse persisted IDs.
++
++    // Stock entries follow the manual zoom row in the TV menu.
++    private static final int FIRST_STOCK_TV_MENU_POSITION = 1;
 +
 +    // Element order matches pref_format_mode_entries. Keep the existing rows/IDs intact.
 +    private static final int[] TV_MENU_IDS = {
-+            ORIGINAL, STRETCH_XY, FULL_SCREEN, FORCE43, FORCE169, FORCE185, FORCE239, AUTO,
-+            FIT_HEIGHT, FIT_EITHER
++            ORIGINAL, STRETCH_XY, FULL_SCREEN, FORCE43, FORCE169, FORCE185, FORCE239, AUTO
 +    };
 +
 +    private VideoDisplayMode() {}
@@ -418,22 +693,31 @@ index 0000000000000000000000000000000000000000..e268b772e3e1acbc475669f0d0441844
 +    }
 +
 +    static int fromTvMenuPosition(int position) {
-+        return position >= 0 && position < TV_MENU_IDS.length ? TV_MENU_IDS[position] : -1;
++        int index = position - FIRST_STOCK_TV_MENU_POSITION;
++        return index >= 0 && index < TV_MENU_IDS.length ? TV_MENU_IDS[index] : -1;
 +    }
 +
 +    static int toTvMenuPosition(int id) {
 +        for (int i = 0; i < TV_MENU_IDS.length; i++) {
-+            if (TV_MENU_IDS[i] == id) return i;
++            if (TV_MENU_IDS[i] == id) return i + FIRST_STOCK_TV_MENU_POSITION;
 +        }
 +        return -1;
++    }
++
++    static int indexForStoredFormat(int[] availableModes, int id) {
++        for (int i = 0; i < availableModes.length; i++) {
++            if (availableModes[i] == id) return i;
++        }
++        // Original is the first cycle entry in both slots.
++        return 0;
 +    }
 +}
 diff --git a/src/main/java/com/archos/mediacenter/video/player/VideoZoomLayout.java b/src/main/java/com/archos/mediacenter/video/player/VideoZoomLayout.java
 new file mode 100644
-index 0000000000000000000000000000000000000000..8fc6dc5b3fe72d4af5d3b633b9ca3def04efd469
+index 0000000..4c9bc97
 --- /dev/null
 +++ b/src/main/java/com/archos/mediacenter/video/player/VideoZoomLayout.java
-@@ -0,0 +1,76 @@
+@@ -0,0 +1,53 @@
 +/*
 + * SPDX-License-Identifier: Apache-2.0
 + */
@@ -446,7 +730,6 @@ index 0000000000000000000000000000000000000000..8fc6dc5b3fe72d4af5d3b633b9ca3def
 +
 +    static final int MANUAL_MIN_PERCENT = 100;
 +    private static final int MANUAL_MAX_PERCENT = 200;
-+    private static final int MANUAL_STEP_PERCENT = 3;
 +
 +    private VideoZoomLayout() {}
 +
@@ -455,8 +738,7 @@ index 0000000000000000000000000000000000000000..8fc6dc5b3fe72d4af5d3b633b9ca3def
 +    }
 +
 +    static int stepManualPercent(int percent, boolean increase) {
-+        return clampManualPercent(clampManualPercent(percent)
-+                + (increase ? MANUAL_STEP_PERCENT : -MANUAL_STEP_PERCENT));
++        return clampManualPercent(clampManualPercent(percent) + (increase ? 1 : -1));
 +    }
 +
 +    static Size manual(int viewportWidth, int viewportHeight, double aspect, int percent) {
@@ -466,27 +748,6 @@ index 0000000000000000000000000000000000000000..8fc6dc5b3fe72d4af5d3b633b9ca3def
 +            long w = Math.round(width * scale);
 +            long h = Math.round(width / aspect * scale);
 +            if (isLayoutSize(w) && isLayoutSize(h)) return new Size((int) w, (int) h);
-+        }
-+        return new Size(viewportWidth, viewportHeight);
-+    }
-+
-+    static Size fitHeight(int viewportWidth, int viewportHeight, double aspect) {
-+        if (isValid(viewportWidth, viewportHeight, aspect)) {
-+            long width = Math.round(viewportHeight * aspect);
-+            if (isLayoutSize(width)) return new Size((int) width, viewportHeight);
-+        }
-+        return new Size(viewportWidth, viewportHeight);
-+    }
-+
-+    static Size cover(int viewportWidth, int viewportHeight, double aspect) {
-+        if (isValid(viewportWidth, viewportHeight, aspect)) {
-+            if (aspect >= (double) viewportWidth / viewportHeight) {
-+                long width = (long) Math.ceil(viewportHeight * aspect);
-+                if (isLayoutSize(width)) return new Size(Math.max(viewportWidth, (int) width), viewportHeight);
-+            } else {
-+                long height = (long) Math.ceil(viewportWidth / aspect);
-+                if (isLayoutSize(height)) return new Size(viewportWidth, Math.max(viewportHeight, (int) height));
-+            }
 +        }
 +        return new Size(viewportWidth, viewportHeight);
 +    }
@@ -510,46 +771,114 @@ index 0000000000000000000000000000000000000000..8fc6dc5b3fe72d4af5d3b633b9ca3def
 +        }
 +    }
 +}
+diff --git a/test/SubtitleDelayPreferenceTest.java b/test/SubtitleDelayPreferenceTest.java
+new file mode 100644
+index 0000000..8ef7228
+--- /dev/null
++++ b/test/SubtitleDelayPreferenceTest.java
+@@ -0,0 +1,83 @@
++/* SPDX-License-Identifier: Apache-2.0 */
++package com.archos.mediacenter.video.player;
++
++import android.content.SharedPreferences;
++
++import java.lang.reflect.Proxy;
++import java.util.HashMap;
++import java.util.Map;
++
++/** Standalone test; only the SharedPreferences storage interface is faked. */
++public final class SubtitleDelayPreferenceTest {
++    public static void main(String[] args) {
++        Store store = new Store();
++        SharedPreferences prefs = store.open();
++        check(SubtitleDelayPreference.isEnabled(prefs), "memory enabled by default");
++        check(SubtitleDelayPreference.resolve(prefs, -180) == -180, "fallback to file value");
++        check(store.writes == 0, "opening/reading must not persist a value");
++
++        check(SubtitleDelayPreference.saveIfEnabled(prefs, 240), "save positive offset");
++        check(SubtitleDelayPreference.resolve(store.open(), -180) == 240, "restore positive offset");
++        check(SubtitleDelayPreference.saveIfEnabled(prefs, -320), "save negative offset");
++        check(SubtitleDelayPreference.resolve(store.open(), 800) == -320, "restore negative offset");
++        check(SubtitleDelayPreference.saveIfEnabled(prefs, 0), "explicitly save neutral offset");
++        check(SubtitleDelayPreference.resolve(store.open(), -180) == 0, "zero is not a missing value");
++
++        SubtitleDelayPreference.setEnabled(prefs, false, 0);
++        int writesAfterDisable = store.writes;
++        check(!SubtitleDelayPreference.saveIfEnabled(prefs, 900), "local edit must bypass global memory");
++        check(store.writes == writesAfterDisable, "disabled edits must not overwrite global memory");
++        check(SubtitleDelayPreference.resolve(store.open(), -180, 0) == 0, "toggle off keeps current session including zero");
++        check(SubtitleDelayPreference.resolve(store.open(), -180, -375) == -375, "metadata refresh keeps disabled current session");
++        check(SubtitleDelayPreference.resolve(store.open(), -180) == -180, "next playback restores file fallback");
++        check(store.values.size() == 1, "turning memory off removed the global delay");
++        SubtitleDelayPreference.setEnabled(prefs, true, -135);
++        check(SubtitleDelayPreference.resolve(store.open(), 1000) == -135, "reenabling captures current exact offset");
++        System.out.println("Subtitle delay positive/negative/reset, restore, local fallback and write guards passed");
++    }
++
++    private static void check(boolean condition, String description) {
++        if (!condition) throw new AssertionError(description);
++    }
++
++    private static final class Store {
++        private final Map<String, Object> values = new HashMap<>();
++        private int writes;
++
++        SharedPreferences open() {
++            return (SharedPreferences) Proxy.newProxyInstance(getClass().getClassLoader(),
++                    new Class<?>[]{SharedPreferences.class}, (proxy, method, args) ->
++                    switch (method.getName()) {
++                        case "getBoolean", "getInt" -> values.getOrDefault((String) args[0], args[1]);
++                        case "contains" -> values.containsKey((String) args[0]);
++                        case "edit" -> editor();
++                        default -> throw new AssertionError(method);
++                    });
++        }
++
++        SharedPreferences.Editor editor() {
++            Map<String, Object> pending = new HashMap<>();
++            return (SharedPreferences.Editor) Proxy.newProxyInstance(getClass().getClassLoader(),
++                    new Class<?>[]{SharedPreferences.Editor.class}, (proxy, method, args) ->
++                    switch (method.getName()) {
++                        case "putBoolean", "putInt" -> {
++                            pending.put((String) args[0], args[1]);
++                            yield proxy;
++                        }
++                        case "remove" -> {
++                            pending.put((String) args[0], null);
++                            yield proxy;
++                        }
++                        case "apply" -> {
++                            pending.forEach((key, value) -> {
++                                if (value == null) values.remove(key);
++                                else values.put(key, value);
++                            });
++                            writes++;
++                            yield null;
++                        }
++                        default -> throw new AssertionError(method);
++                    });
++        }
++    }
++}
 diff --git a/test/VideoZoomLayoutTest.java b/test/VideoZoomLayoutTest.java
 new file mode 100644
-index 0000000000000000000000000000000000000000..ea46e0a134ca62584999dbe8b470e7ad6e29669e
+index 0000000..79abed9
 --- /dev/null
 +++ b/test/VideoZoomLayoutTest.java
-@@ -0,0 +1,99 @@
+@@ -0,0 +1,86 @@
 +/* SPDX-License-Identifier: Apache-2.0 */
 +package com.archos.mediacenter.video.player;
 +
 +/** Standalone geometry tests: see the javac/java commands in the patch handoff. */
 +public final class VideoZoomLayoutTest {
 +    public static void main(String[] args) {
-+        // Scope, 4:3, portrait, matching 16:9, and a tall viewport.
-+        height(1920, 1080, 2.39, 2581, 1080);
-+        height(1920, 1080, 4.0 / 3, 1440, 1080);
-+        height(1920, 1080, 9.0 / 16, 608, 1080);
-+        height(1920, 1080, 16.0 / 9, 1920, 1080);
-+        height(1080, 1920, 16.0 / 9, 3413, 1920);
-+        cover(1920, 1080, 2.39, 2582, 1080);
-+        cover(1920, 1080, 4.0 / 3, 1920, 1440);
-+        cover(1920, 1080, 9.0 / 16, 1920, 3414);
-+        cover(1920, 1080, 16.0 / 9, 1920, 1080);
-+        cover(1080, 1920, 16.0 / 9, 3414, 1920);
-+        // Effective aspect already includes a non-square pixel ratio.
-+        height(1920, 1080, (720.0 / 576) * (64.0 / 45), 1920, 1080);
-+        // Cover must be large enough in both dimensions, even for fractional pixels.
-+        cover(853, 480, 16.0 / 9, 854, 480);
-+        // Invalid aspect/viewport: leave viewport unchanged, not a zero or overflow.
-+        height(1920, 1080, Double.NaN, 1920, 1080);
-+        cover(1920, 1080, Double.POSITIVE_INFINITY, 1920, 1080);
-+        cover(1920, 1080, 0, 1920, 1080);
-+        cover(1920, 1080, 1e-12, 1920, 1080);
-+        cover(0, 1080, 2.39, 0, 1080);
 +        manual();
 +        modes();
-+        System.out.println("17 automatic geometry cases, 14 manual checks and mode-mapping regressions passed");
++        System.out.println("Manual zoom geometry, 1-point steps, and stock menu/migration regressions passed");
 +    }
 +
 +    private static void manual() {
-+        // A 100% manual reset fits the complete picture, even after auto-cover.
++        // A 100% manual reset fits the complete picture.
 +        check(VideoZoomLayout.manual(1920, 1080, 2.4, 100), 1920, 800);
 +        check(VideoZoomLayout.manual(1920, 1080, 2.4, 125), 2400, 1000);
 +        check(VideoZoomLayout.manual(1920, 1080, 4.0 / 3, 150), 2160, 1620);
@@ -565,10 +894,15 @@ index 0000000000000000000000000000000000000000..ea46e0a134ca62584999dbe8b470e7ad
 +        check(VideoZoomLayout.manual(1920, 1080, 16.0 / 9, 0), 1920, 1080);
 +        check(VideoZoomLayout.manual(1920, 1080, 16.0 / 9, 999), 3840, 2160);
 +        check(VideoZoomLayout.manual(1920, 1080, Double.NaN, 150), 1920, 1080);
++        // A value saved by an older version remains exact; each new step moves only 1 point.
++        if (VideoZoomLayout.clampManualPercent(145) != 145) {
++            throw new AssertionError("Persisted valid percent changed on load");
++        }
 +        percent(100, false, 100);
-+        percent(100, true, 103);
-+        percent(103, false, 100);
-+        percent(135, true, 138);
++        percent(100, true, 101);
++        percent(145, true, 146);
++        percent(145, false, 144);
++        percent(101, false, 100);
 +        percent(199, true, 200);
 +        percent(200, true, 200);
 +    }
@@ -581,31 +915,34 @@ index 0000000000000000000000000000000000000000..ea46e0a134ca62584999dbe8b470e7ad
 +    }
 +
 +    private static void modes() {
-+        int[] fullOrder = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9};
-+        int[] standardOrder = {0, 1, 2, 3, 4, 5, 6, 8, 9};
++        int[] fullOrder = {0, 1, 2, 3, 4, 5, 6, 7};
++        int[] standardOrder = {0, 1, 2, 3, 4, 5, 6};
 +        if (!java.util.Arrays.equals(fullOrder, VideoDisplayMode.cycleIds(true))
 +                || !java.util.Arrays.equals(standardOrder, VideoDisplayMode.cycleIds(false))) {
-+            throw new AssertionError("Changed legacy order or AUTO eligibility");
++            throw new AssertionError("Changed stock order or AUTO eligibility");
 +        }
 +        for (int i = 0; i < fullOrder.length; i++) {
-+            if (VideoDisplayMode.fromTvMenuPosition(i) != fullOrder[i]
-+                    || VideoDisplayMode.toTvMenuPosition(fullOrder[i]) != i) {
-+                throw new AssertionError("TV menu ID round trip failed for " + i);
++            if (VideoDisplayMode.fromTvMenuPosition(i + 1) != fullOrder[i]
++                    || VideoDisplayMode.toTvMenuPosition(fullOrder[i]) != i + 1
++                    || VideoDisplayMode.indexForStoredFormat(fullOrder, fullOrder[i]) != i) {
++                throw new AssertionError("Stock TV row/stored ID round trip failed for " + i);
 +            }
 +        }
 +        if (VideoDisplayMode.fromTvMenuPosition(-1) != -1
-+                || VideoDisplayMode.fromTvMenuPosition(fullOrder.length) != -1
-+                || VideoDisplayMode.toTvMenuPosition(12345) != -1) {
-+            throw new AssertionError("Invalid TV menu item mapped to a valid mode");
++                || VideoDisplayMode.fromTvMenuPosition(0) != -1
++                || VideoDisplayMode.fromTvMenuPosition(fullOrder.length + 1) != -1
++                || VideoDisplayMode.toTvMenuPosition(8) != -1
++                || VideoDisplayMode.toTvMenuPosition(9) != -1) {
++            throw new AssertionError("Manual or non-format rows mapped to a stock ID");
 +        }
-+    }
-+
-+    private static void height(int w, int h, double ar, int ew, int eh) {
-+        check(VideoZoomLayout.fitHeight(w, h, ar), ew, eh);
-+    }
-+
-+    private static void cover(int w, int h, double ar, int ew, int eh) {
-+        check(VideoZoomLayout.cover(w, h, ar), ew, eh);
++        for (int[] slot : new int[][] {standardOrder, fullOrder}) {
++            for (int invalid : new int[] {-1, 8, 9, 100}) {
++                int index = VideoDisplayMode.indexForStoredFormat(slot, invalid);
++                if (slot[index] != VideoDisplayMode.ORIGINAL) {
++                    throw new AssertionError("Removed/unrecognized ID did not fall back to Original: " + invalid);
++                }
++            }
++        }
 +    }
 +
 +    private static void check(VideoZoomLayout.Size actual, int w, int h) {

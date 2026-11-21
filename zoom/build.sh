@@ -17,9 +17,12 @@ git -C "$src/Video" apply "$root/patches/Video-zoom.patch"
     cd "$src/Video"
     jvm=$(mktemp -d "$src/test.XXXXXX")
     pkg=src/main/java/com/archos/mediacenter/video/player
-    javac -d "$jvm" "$pkg/VideoDisplayMode.java" "$pkg/VideoZoomLayout.java" test/VideoZoomLayoutTest.java
-    java -cp "$jvm" com.archos.mediacenter.video.player.VideoZoomLayoutTest
-    bash ./gradlew --no-daemon --max-workers=4 --console=plain -Psponsor assembleNoamazonRelease -x :FileCoreLibrary:ndkBuild -x :MediaLib:ndkBuild
+    android_jar="$sdk/platforms/android-37.0/android.jar"
+    javac -cp "$android_jar" -d "$jvm" "$pkg/VideoDisplayMode.java" "$pkg/VideoZoomLayout.java" \
+        "$pkg/SubtitleDelayPreference.java" test/VideoZoomLayoutTest.java test/SubtitleDelayPreferenceTest.java
+    java -cp "$jvm:$android_jar" com.archos.mediacenter.video.player.VideoZoomLayoutTest
+    java -cp "$jvm:$android_jar" com.archos.mediacenter.video.player.SubtitleDelayPreferenceTest
+    bash ./gradlew --no-daemon --max-workers=4 --console=plain -Psponsor assembleNoamazonRelease lintNoamazonRelease -x :FileCoreLibrary:ndkBuild -x :MediaLib:ndkBuild
 )
 shopt -s nullglob
 build="$src/Video/build/outputs/apk/noamazon/release"

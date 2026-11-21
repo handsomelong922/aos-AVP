@@ -1,7 +1,7 @@
 # NOVA Zoom fork build
 Based on the official [NOVA Video Player v6.6.5 release](https://github.com/nova-video-player/aos-AVP/releases/tag/v6.6.5). The untouched release manifest pins sibling repository revisions. The Android build fetches the four needed source repositories at those pins; it never follows an upstream branch or the stale AVP submodule hints.
 
-- `patches/Video-zoom.patch`: aspect-preserving fit-height, cover, and persistent manual zoom, with pure-Java tests.
+- `patches/Video-zoom.patch`: persistent manual zoom and subtitle delay, with standalone Java regression tests.
 - `patches/packaging-overlay-*.patch`: separate `org.courville.nova.zoom` application identity, ARM splits and associated packaging.
 - `inputs.py`: verifies the official manifest and both official release APK hashes, extracts their 20 non-Sentry libraries per ABI, and checks all 22 output APK libraries against the official ABI's bytes. The other two come from the pinned project's Maven dependencies. This reuses exact official native binaries rather than rebuilding them; official inputs and applicable source/license references are in the upstream release and its manifest.
 
