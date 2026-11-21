@@ -6,9 +6,8 @@ src="$(realpath -m "$1")"
 out="$(realpath -m "$2")"
 [[ ! -e "$src" && ! -e "$out" && "$src" != "$out" ]] || { echo 'Source and output paths must be distinct and unused' >&2; exit 2; }
 mkdir "$src" "$out"
-sdk="${ANDROID_SDK_ROOT:-${ANDROID_HOME:?Set ANDROID_SDK_ROOT or ANDROID_HOME}}"
+sdk=$(bash "$root/provision-sdk.sh" "$src/.android-sdk")
 export ANDROID_HOME="$sdk" ANDROID_SDK_ROOT="$sdk"
-sdkmanager --install 'platforms;android-37.0' 'build-tools;37.0.0'
 python3 "$root/inputs.py" prepare "$root" "$src"
 for p in Video MediaLib FileCoreLibrary; do
     git -C "$src/$p" apply "$root/patches/packaging-overlay-$p.patch"
