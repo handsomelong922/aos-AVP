@@ -1,0 +1,28 @@
+name: NOVA Zoom APK build
+on:
+  push:
+    branches: [nova-zoom]
+    paths: ['zoom/**', '.github/workflows/nova-zoom.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Build and verify unsigned APKs
+        run: bash zoom/build.sh "${RUNNER_TEMP}/nova-zoom-src" "${GITHUB_WORKSPACE}/dist"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nova-zoom-unsigned-apks
+          path: dist/
+          retention-days: 30
+          if-no-files-found: error

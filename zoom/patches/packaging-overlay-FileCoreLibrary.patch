@@ -1,0 +1,35 @@
+diff --git a/src/com/archos/filecorelibrary/FileUtilsQ.java b/src/com/archos/filecorelibrary/FileUtilsQ.java
+index d227e4d9a55a10658c2f47c5377a869b4a7954d7..d785deae780e26e62c17502121c43e71be925e0e 100644
+--- a/src/com/archos/filecorelibrary/FileUtilsQ.java
++++ b/src/com/archos/filecorelibrary/FileUtilsQ.java
+@@ -59,7 +59,7 @@ public class FileUtilsQ {
+     public static String publicAppDirectory = null;
+     public static String privateAppDirectory = null;
+ 
+-    private static final String DEFAULT_PUBLIC_APP_DIR = "/sdcard/Android/data/org.courville.nova/files";
++    private static final String DEFAULT_PUBLIC_APP_DIR = "/sdcard/Android/data/org.courville.nova.zoom/files";
+     private static final File DEFAULT_PUBLIC_APP_FILE = new File(DEFAULT_PUBLIC_APP_DIR);
+ 
+     public static void setDeleteLauncher(ActivityResultLauncher<IntentSenderRequest> launcher) {
+@@ -426,7 +426,7 @@ public class FileUtilsQ {
+             if (externalStorageState != null && externalStorageState.equals(Environment.MEDIA_MOUNTED)) {
+                 try {
+                     File extDir = Environment.getExternalStorageDirectory();
+-                    String pkgName = (context != null) ? context.getPackageName() : "org.courville.nova";
++                    String pkgName = (context != null) ? context.getPackageName() : "org.courville.nova.zoom";
+                     File appDir = (extDir != null) ? new File(extDir, "Android/data/" + pkgName + "/files") : DEFAULT_PUBLIC_APP_FILE;
+                     sPublicAppDir = appDir;
+                     publicAppDirectory = appDir.getPath();
+diff --git a/src/com/archos/filecorelibrary/samba/SambaConfiguration.java b/src/com/archos/filecorelibrary/samba/SambaConfiguration.java
+index 19e50f26eb6858d9da9e872ebd642bd7f6f78c13..4041ec7563eae104af8c4a474ebc1d0393e0bc08 100644
+--- a/src/com/archos/filecorelibrary/samba/SambaConfiguration.java
++++ b/src/com/archos/filecorelibrary/samba/SambaConfiguration.java
+@@ -38,7 +38,7 @@ import javax.crypto.spec.SecretKeySpec;
+ 
+ public class SambaConfiguration {
+ 
+-	protected static final String configFile = Environment.getExternalStorageDirectory()+"/Android/data/org.courville.nova/files/smb/credentials.conf";
++	protected static final String configFile = Environment.getExternalStorageDirectory()+"/Android/data/org.courville.nova.zoom/files/smb/credentials.conf";
+     protected static final String oldConfigFile = Environment.getExternalStorageDirectory()+"/Android/data/com.archos.mediacenter/smb/credentials.conf";
+ 	static{
+ 	    checkNewConfigFile();

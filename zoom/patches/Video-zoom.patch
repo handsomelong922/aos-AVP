@@ -1,0 +1,617 @@
+diff --git a/res/values-zh-rCN/strings.xml b/res/values-zh-rCN/strings.xml
+index fa0b26157f7568cba1476fc6792b62463ec77c09..7892dca212276947bbb28496d5e5e6a861e50f88 100644
+--- a/res/values-zh-rCN/strings.xml
++++ b/res/values-zh-rCN/strings.xml
+@@ -571,10 +571,14 @@
+     <string name="notifications_alerts">仅通知提醒</string>
+     <string name="notifications_none">没有通知</string>
+     <string name="pref_format_mode_title">格式</string>
++    <string name="video_manual_zoom_idle">手动缩放 %1$d%% · 确认启用</string>
++    <string name="video_manual_zoom_active">手动缩放 %1$d%% · ←/→ 调节 · 确认重置</string>
+     <string name="format_fullscreen">全屏</string>
+     <string name="format_optimized">优化</string>
+     <string name="format_original">原始比例</string>
+     <string name="format_stretched">拉伸</string>
++    <string name="format_fit_height">适应高度</string>
++    <string name="format_fit_either">等比填满（裁边）</string>
+     <string name="format_43">4:3</string>
+     <string name="format_169">16:9</string>
+     <string name="format_185">1.85:1</string>
+diff --git a/res/values-zh-rTW/strings.xml b/res/values-zh-rTW/strings.xml
+index d7c66ff04198ef53b77ad5c5674b0b60b2281441..0498e1986c475b92976f8524b42a6284ce6b6205 100644
+--- a/res/values-zh-rTW/strings.xml
++++ b/res/values-zh-rTW/strings.xml
+@@ -509,6 +509,8 @@
+     <string name="notifications_alerts">僅通知提醒</string>
+     <string name="notifications_none">沒有通知</string>
+     <string name="pref_format_mode_title">格式</string>
++    <string name="video_manual_zoom_idle">手動縮放 %1$d%% · 確認啟用</string>
++    <string name="video_manual_zoom_active">手動縮放 %1$d%% · ←/→ 調整 · 確認重設</string>
+     <string name="format_fullscreen">全螢幕</string>
+     <string name="format_optimized">最佳化</string>
+     <string name="format_original">原始</string>
+diff --git a/res/values/arrays.xml b/res/values/arrays.xml
+index 5e87324a826edf7f8ab61bcf5cebe153d507cb57..d5e541d7437d046e5f3d4c87e051d2b3affc8d78 100644
+--- a/res/values/arrays.xml
++++ b/res/values/arrays.xml
+@@ -72,6 +72,8 @@
+         <item>@string/format_185</item>
+         <item>@string/format_239</item>
+         <item>@string/format_optimized</item>
++        <item>@string/format_fit_height</item>
++        <item>@string/format_fit_either</item>
+     </string-array>
+     <string-array name="pref_play_mode_entries" translatable="false">
+         <item>@string/pref_play_mode_entry_single</item>
+diff --git a/res/values/strings.xml b/res/values/strings.xml
+index 91f7fbcdcad013f2e2846526773a4de1166a96c9..3e735a8e6eba8d149a3a1dae85f8ebb921f813fc 100644
+--- a/res/values/strings.xml
++++ b/res/values/strings.xml
+@@ -642,10 +642,14 @@
+     <string name="notifications_none">No notifications</string>
+ 
+     <string name="pref_format_mode_title">Format</string>
++    <string name="video_manual_zoom_idle">Manual zoom %1$d%% · OK: select</string>
++    <string name="video_manual_zoom_active">Manual zoom %1$d%% · ←/→ · OK: reset</string>
+     <string name="format_fullscreen">Fullscreen</string>
+     <string name="format_optimized">Optimized</string>
+     <string name="format_original">Original</string>
+     <string name="format_stretched">Stretched</string>
++    <string name="format_fit_height">Fit height</string>
++    <string name="format_fit_either">Fit either width or height</string>
+     <string name="format_43">4:3</string>
+     <string name="format_169">16:9</string>
+     <string name="format_185">1.85:1</string>
+diff --git a/src/main/java/com/archos/mediacenter/video/player/PlayerActivity.java b/src/main/java/com/archos/mediacenter/video/player/PlayerActivity.java
+index 476d75842844ff030d68be3d6526133b1eacf524..2a4b51b43ec9111e60bc5b3f7ea719b23fa41d67 100644
+--- a/src/main/java/com/archos/mediacenter/video/player/PlayerActivity.java
++++ b/src/main/java/com/archos/mediacenter/video/player/PlayerActivity.java
+@@ -233,6 +233,8 @@ public class PlayerActivity extends AppCompatActivity implements PlayerControlle
+ 
+     private static final String KEY_PLAYER_FORMAT = "player_pref_format_key";
+     private static final String KEY_PLAYER_AUTO_FORMAT = "player_pref_auto_format_key";
++    private static final String KEY_PLAYER_MANUAL_ZOOM_ACTIVE = "player_pref_manual_zoom_active";
++    private static final String KEY_PLAYER_MANUAL_ZOOM_PERCENT = "player_pref_manual_zoom_percent";
+     private static final String KEY_PLAYER_PROJECTOR_MODE = "player_projector_mode_key";
+     private static final String KEY_AUDIO_FILT = "pref_audio_filt_int_key"; // used to be "pref_audio_filt_key", containing a string
+     private static final String KEY_AUDIO_FILT_NIGHT = "pref_audio_filt_night_int_key";
+@@ -450,6 +452,7 @@ public class PlayerActivity extends AppCompatActivity implements PlayerControlle
+     private TVCardView mAudioTracksTVCardView;
+     private TVCardView mPlayModeTVCardView;
+     private TVMenu mAudioTracksTVMenu;
++    private Runnable mRefreshTvFormatMenu;
+     private TVMenu mPlayModeTVMenu;
+     private TVMenuItem mPlayModeAutoSkipMenuItem;
+     private TVMenuItem mPlayModeAutoSkipAlwaysMenuItem;
+@@ -1013,6 +1016,8 @@ public class PlayerActivity extends AppCompatActivity implements PlayerControlle
+         setLockRotation(mLockRotation);
+         mSurfaceController.setVideoFormat(Integer.parseInt(mPreferences.getString(KEY_PLAYER_FORMAT, "-1")),
+                 Integer.parseInt(mPreferences.getString(KEY_PLAYER_AUTO_FORMAT, "-1")));
++        mSurfaceController.setManualZoom(mPreferences.getBoolean(KEY_PLAYER_MANUAL_ZOOM_ACTIVE, false),
++                mPreferences.getInt(KEY_PLAYER_MANUAL_ZOOM_PERCENT, VideoZoomLayout.MANUAL_MIN_PERCENT));
+ 
+         //Set up projector mode if we need it, otherwise dont even call.
+         if (mPreferences.getBoolean(KEY_PLAYER_PROJECTOR_MODE, false)) mSurfaceController.setProjectorMode(true);
+@@ -2476,6 +2481,22 @@ public class PlayerActivity extends AppCompatActivity implements PlayerControlle
+         }
+     }
+ 
++    private String manualZoomLabel() {
++        return getString(mSurfaceController.isManualZoomActive()
++                        ? R.string.video_manual_zoom_active : R.string.video_manual_zoom_idle,
++                mSurfaceController.getManualZoomPercent());
++    }
++
++    private void applyManualZoom(int percent) {
++        mSurfaceController.setManualZoom(true, percent);
++        mPreferences.edit()
++                .putBoolean(KEY_PLAYER_MANUAL_ZOOM_ACTIVE, true)
++                .putInt(KEY_PLAYER_MANUAL_ZOOM_PERCENT, mSurfaceController.getManualZoomPercent())
++                .apply();
++        if (mRefreshTvFormatMenu != null) mRefreshTvFormatMenu.run();
++        mSubtitleManager.updateSubtitleLayout();
++    }
++
+     public void createPlayerTVMenu() {
+         if (mPlayerController != null && mPlayerController.getTVMenuAdapter() != null) {
+             TVMenuAdapter tma = mPlayerController.getTVMenuAdapter();
+@@ -2579,7 +2600,37 @@ public class PlayerActivity extends AppCompatActivity implements PlayerControlle
+                                        getResources().getString( R.string.pref_format_mode_title));
+             final TVMenu tvmFormat = tma.createTVMenu();
+ 
+-            tvmFormat.setItems(R.array.pref_format_mode_entries, mSurfaceController.getCurrentFormat(), true);
++            tvmFormat.setItems(R.array.pref_format_mode_entries,
++                    mSurfaceController.isManualZoomActive() ? -1
++                            : VideoDisplayMode.toTvMenuPosition(mSurfaceController.getCurrentFormat()), true);
++            final TVMenuItem manualZoomItem = tvmFormat.createAndAddTVMenuItem(manualZoomLabel(),
++                    true, mSurfaceController.isManualZoomActive());
++            manualZoomItem.setOnKeyListener((view, keyCode, event) -> {
++                if (keyCode != KeyEvent.KEYCODE_DPAD_LEFT && keyCode != KeyEvent.KEYCODE_DPAD_RIGHT)
++                    return false;
++                if (event.getAction() == KeyEvent.ACTION_DOWN) {
++                    applyManualZoom(VideoZoomLayout.stepManualPercent(
++                            mSurfaceController.getManualZoomPercent(), keyCode == KeyEvent.KEYCODE_DPAD_RIGHT));
++                }
++                return true;
++            });
++            mRefreshTvFormatMenu = () -> {
++                tvmFormat.unCheckAll();
++                manualZoomItem.setText(manualZoomLabel());
++                if (mSurfaceController.isManualZoomActive()) {
++                    manualZoomItem.setChecked(true);
++                } else {
++                    int position = VideoDisplayMode.toTvMenuPosition(mSurfaceController.getCurrentFormat());
++                    if (position >= 0 && tvmFormat.getItem(position) instanceof TVMenuItem selected)
++                        selected.setChecked(true);
++                }
++            };
++            // Keep remote focus on the TVMenuItem rather than the inner RadioButton, so
++            // DPAD and the checkmark share the same row target (touch is normalized below).
++            for (int i = 0; tvmFormat.getItem(i) != null; i++) {
++                View infoText = tvmFormat.getItem(i).findViewById(R.id.info_text);
++                if (infoText != null) infoText.setFocusable(false);
++            }
+ 
+ 
+             if (mSurfaceController.getMax() < 3) {
+@@ -2602,8 +2653,16 @@ public class PlayerActivity extends AppCompatActivity implements PlayerControlle
+                 @SuppressWarnings("deprecation") // enterPictureInPictureMode(): API 26+ uses PictureInPictureParams
+                 @Override
+                 public void onClick(View v) {
+-                    // TODO Auto-generated method stub
+-                    if(v == vPicInPic){
++                    View item = v;
++                    if (!(item instanceof TVMenuItem) && v.getParent() instanceof TVMenuItem parentItem)
++                        item = parentItem;
++                    if (item == manualZoomItem) {
++                        int percent = mSurfaceController.isManualZoomActive()
++                                ? VideoZoomLayout.MANUAL_MIN_PERCENT : mSurfaceController.getManualZoomPercent();
++                        applyManualZoom(percent);
++                        return;
++                    }
++                    if (item == vPicInPic) {
+                         mPlayerController.showTVMenu(false);
+                         if (Build.VERSION.SDK_INT>=26) {
+                             PictureInPictureParams.Builder builder = new PictureInPictureParams.Builder();
+@@ -2627,11 +2686,10 @@ public class PlayerActivity extends AppCompatActivity implements PlayerControlle
+                             enterPictureInPictureMode();
+                         }
+                     }
+-                    if (v instanceof TVMenuItem) {
+-                        int which = tvmFormat.getItemPostion(v);
+-                        mSurfaceController.setVideoFormat(tvmFormat.getItemPostion(v));
+-                        tvmFormat.unCheckAll();
+-                        ((TVMenuItem)v).setChecked(true);
++                    if (item instanceof TVMenuItem formatItem) {
++                        int mode = VideoDisplayMode.fromTvMenuPosition(tvmFormat.getItemPostion(formatItem));
++                        if (mode < 0) return;
++                        mSurfaceController.setVideoFormat(mode);
+                     }
+                 }
+             });
+@@ -4915,7 +4973,9 @@ public class PlayerActivity extends AppCompatActivity implements PlayerControlle
+             SharedPreferences.Editor editor = mPreferences.edit();
+             editor.putString(KEY_PLAYER_FORMAT, String.valueOf(fmt));
+             editor.putString(KEY_PLAYER_AUTO_FORMAT, String.valueOf(autoFmt));
++            editor.putBoolean(KEY_PLAYER_MANUAL_ZOOM_ACTIVE, false);
+             editor.apply(); // commit is blocking .. avoid
++            if (mRefreshTvFormatMenu != null) mRefreshTvFormatMenu.run();
+             // Update the subtitle layout when the video format changes
+             mSubtitleManager.updateSubtitleLayout();
+         }
+diff --git a/src/main/java/com/archos/mediacenter/video/player/PlayerController.java b/src/main/java/com/archos/mediacenter/video/player/PlayerController.java
+index a416e8bb35fa4bc91031ae66e827b3f6d31cb179..c9b6d78e60042ec99c06d9bda965682d1565c53b 100644
+--- a/src/main/java/com/archos/mediacenter/video/player/PlayerController.java
++++ b/src/main/java/com/archos/mediacenter/video/player/PlayerController.java
+@@ -1482,8 +1482,12 @@ public class PlayerController implements View.OnTouchListener, OnGenericMotionLi
+                 mFormatButton.setImageResource(mBarXYIconResource);
+                 break;
+             case SurfaceController.VideoFormat.FULL_SCREEN:
++            case SurfaceController.VideoFormat.FIT_EITHER:
+                 mFormatButton.setImageResource(R.drawable.video_format_arrow_xy);
+                 break;
++            case SurfaceController.VideoFormat.FIT_HEIGHT:
++                mFormatButton.setImageResource(R.drawable.video_format_arrow_vertical);
++                break;
+             case SurfaceController.VideoFormat.FORCE43:
+                 mFormatButton.setImageResource(R.drawable.video_format_43);
+                 break;
+diff --git a/src/main/java/com/archos/mediacenter/video/player/SurfaceController.java b/src/main/java/com/archos/mediacenter/video/player/SurfaceController.java
+index aca6701742a51507ef7399090c32156044472aaf..480378ae5dffcd235e5c6666f8eae86774b350b1 100644
+--- a/src/main/java/com/archos/mediacenter/video/player/SurfaceController.java
++++ b/src/main/java/com/archos/mediacenter/video/player/SurfaceController.java
+@@ -41,34 +41,30 @@ public class SurfaceController {
+     }
+ 
+     public class VideoFormat {
+-        public static final int ORIGINAL = 0;
+-        public static final int STRETCH_XY = 1;
+-        /*
+-         *  for 2:35 video on 4/3 screen:
+-         *  intermediate surface height in order to don't crop too much video
+-         */
+-        public static final int FULL_SCREEN = 2;
+-        public static final int FORCE43 = 3;
+-        public static final int FORCE169 = 4;
+-        public static final int FORCE185 = 5;
+-        public static final int FORCE239 = 6;
+-        public static final int AUTO = 7;
+-        
++        public static final int ORIGINAL = VideoDisplayMode.ORIGINAL;
++        public static final int STRETCH_XY = VideoDisplayMode.STRETCH_XY;
++        public static final int FULL_SCREEN = VideoDisplayMode.FULL_SCREEN;
++        public static final int FORCE43 = VideoDisplayMode.FORCE43;
++        public static final int FORCE169 = VideoDisplayMode.FORCE169;
++        public static final int FORCE185 = VideoDisplayMode.FORCE185;
++        public static final int FORCE239 = VideoDisplayMode.FORCE239;
++        public static final int AUTO = VideoDisplayMode.AUTO;
++        public static final int FIT_HEIGHT = VideoDisplayMode.FIT_HEIGHT;
++        public static final int FIT_EITHER = VideoDisplayMode.FIT_EITHER;
++
+         public static final double VIDEO_FORMAT_AUTO_THRES = 0.7;
+ 
+-        private final int[] mode = {ORIGINAL, STRETCH_XY, FULL_SCREEN, FORCE43, FORCE169, FORCE185, FORCE239, AUTO};
+-        private final int max;
++        private final int[] mode;
+         private int idx;
+-        public VideoFormat(int max) {
+-            this.max = max;
+-            this.idx = 0;
++        private VideoFormat(boolean allowOptimized) {
++            this.mode = VideoDisplayMode.cycleIds(allowOptimized);
+         }
+ 
+         private int getFmt() {
+             return mode[idx];
+         }
+         private void setFmt(int fmt) {
+-            for (int i = 0; i < max; ++i) {
++            for (int i = 0; i < mode.length; ++i) {
+                 if (mode[i] == fmt) {
+                     idx = i;
+                     return;
+@@ -77,15 +73,15 @@ public class SurfaceController {
+             idx = 0;
+         }
+         private int switchFmt() {
+-            idx = (idx + 1) % max;
++            idx = (idx + 1) % mode.length;
+             return mode[idx];
+         }
+ 
+         private int getNextFmt() {
+-            return mode[(idx + 1) % max];
++            return mode[(idx + 1) % mode.length];
+         }
+         public int getMax(){
+-            return max;
++            return mode.length;
+         }
+     }
+     public interface Listener {
+@@ -106,8 +102,10 @@ public class SurfaceController {
+     private int         mVideoWidth = 0;
+     private int         mVideoHeight = 0;
+     private double      mVideoAspect = 1.0f;
+-    private VideoFormat mVideoFormat = new VideoFormat(7);
+-    private VideoFormat mAutoVideoFormat = new VideoFormat(8);
++    private VideoFormat mVideoFormat = new VideoFormat(false);
++    private VideoFormat mAutoVideoFormat = new VideoFormat(true);
++    private boolean mManualZoomActive;
++    private int mManualZoomPercent = VideoZoomLayout.MANUAL_MIN_PERCENT;
+     private int         mSurfaceWidth = 0;
+     private int         mSurfaceHeight = 0;
+     public boolean willStretchY;
+@@ -334,8 +332,25 @@ public class SurfaceController {
+         }
+     }
+ 
++    public boolean isManualZoomActive() {
++        return mManualZoomActive;
++    }
++
++    public int getManualZoomPercent() {
++        return mManualZoomPercent;
++    }
++
++    public void setManualZoom(boolean active, int percent) {
++        int clamped = VideoZoomLayout.clampManualPercent(percent);
++        if (mManualZoomActive == active && mManualZoomPercent == clamped) return;
++        mManualZoomActive = active;
++        mManualZoomPercent = clamped;
++        updateSurface();
++    }
++
+     public void switchVideoFormat() {
+         if (log.isDebugEnabled()) log.debug("switchVideoFormat");
++        mManualZoomActive = false;
+         getVideoFormat().switchFmt();
+         updateSurface();
+         if (mSurfaceListener != null) {
+@@ -344,6 +359,7 @@ public class SurfaceController {
+     }
+     public void setVideoFormat(int fmt) {
+         if (log.isDebugEnabled()) log.debug("setVideoFormat fmt={}", fmt);
++        mManualZoomActive = false;
+         getVideoFormat().setFmt(fmt);
+         updateSurface();
+         if (mSurfaceListener != null) {
+@@ -462,7 +478,9 @@ public class SurfaceController {
+         
+         //Do the Aspect Ratio Override if required.
+         fmt = getVideoFormat().getFmt();
+-        double ar = switch (fmt) {
++        // The optional GL stereo path handles its own per-eye viewport and buffer sizes.
++        boolean manualZoom = mManualZoomActive && !mEffectEnable;
++        double ar = manualZoom ? par * sar : switch (fmt) {
+             case VideoFormat.FORCE43 -> 4f / 3f;
+             case VideoFormat.FORCE169 -> 16f / 9f;
+             case VideoFormat.FORCE185 -> 1.85f;
+@@ -476,7 +494,11 @@ public class SurfaceController {
+         if (log.isDebugEnabled()) log.debug("CONFIG updateSurface: sar={}, ar={}, dar={}, dcar={}", sar, ar, dar, dcar);
+ 
+         //Apply any Video Format Effects, stretch to the right size.
+-        switch (fmt) {
++        if (manualZoom) {
++            VideoZoomLayout.Size size = VideoZoomLayout.manual(dcw, dch, ar, mManualZoomPercent);
++            dcw = size.width;
++            dch = size.height;
++        } else switch (fmt) {
+             case VideoFormat.ORIGINAL, VideoFormat.FORCE43, VideoFormat.FORCE169, VideoFormat.FORCE185, VideoFormat.FORCE239:
+                 if (dcar < ar) {
+                     //4:3 movie on 16:9 screen or 16:9 movie on portrait screen
+@@ -521,6 +543,14 @@ public class SurfaceController {
+                 //if (log.isDebugEnabled()) log.debug("CONFIG updateSurface: VideoFormat.FULL_SCREEN dc=({},{}), crop=({},{})", dcw, dch, cropW, cropH);
+                 break;
+             }
++            case VideoFormat.FIT_HEIGHT, VideoFormat.FIT_EITHER: {
++                VideoZoomLayout.Size size = fmt == VideoFormat.FIT_HEIGHT
++                        ? VideoZoomLayout.fitHeight(dcw, dch, ar)
++                        : VideoZoomLayout.cover(dcw, dch, ar);
++                dcw = size.width;
++                dch = size.height;
++                break;
++            }
+             case VideoFormat.AUTO: {
+                 //cropW = 1.0f;
+                 //cropH = 1.0f;
+diff --git a/src/main/java/com/archos/mediacenter/video/player/VideoDisplayMode.java b/src/main/java/com/archos/mediacenter/video/player/VideoDisplayMode.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..e268b772e3e1acbc475669f0d044184435d29470
+--- /dev/null
++++ b/src/main/java/com/archos/mediacenter/video/player/VideoDisplayMode.java
+@@ -0,0 +1,47 @@
++/*
++ * SPDX-License-Identifier: Apache-2.0
++ */
++package com.archos.mediacenter.video.player;
++
++/** Stable preference IDs, independent of remote menu and button-cycle positions. */
++final class VideoDisplayMode {
++    static final int ORIGINAL = 0;
++    static final int STRETCH_XY = 1;
++    static final int FULL_SCREEN = 2;
++    static final int FORCE43 = 3;
++    static final int FORCE169 = 4;
++    static final int FORCE185 = 5;
++    static final int FORCE239 = 6;
++    static final int AUTO = 7;
++    static final int FIT_HEIGHT = 8;
++    static final int FIT_EITHER = 9;
++
++    // Element order matches pref_format_mode_entries. Keep the existing rows/IDs intact.
++    private static final int[] TV_MENU_IDS = {
++            ORIGINAL, STRETCH_XY, FULL_SCREEN, FORCE43, FORCE169, FORCE185, FORCE239, AUTO,
++            FIT_HEIGHT, FIT_EITHER
++    };
++
++    private VideoDisplayMode() {}
++
++    static int[] cycleIds(boolean allowOptimized) {
++        if (allowOptimized) return TV_MENU_IDS.clone();
++        int[] ids = new int[TV_MENU_IDS.length - 1];
++        int count = 0;
++        for (int id : TV_MENU_IDS) {
++            if (id != AUTO) ids[count++] = id;
++        }
++        return ids;
++    }
++
++    static int fromTvMenuPosition(int position) {
++        return position >= 0 && position < TV_MENU_IDS.length ? TV_MENU_IDS[position] : -1;
++    }
++
++    static int toTvMenuPosition(int id) {
++        for (int i = 0; i < TV_MENU_IDS.length; i++) {
++            if (TV_MENU_IDS[i] == id) return i;
++        }
++        return -1;
++    }
++}
+diff --git a/src/main/java/com/archos/mediacenter/video/player/VideoZoomLayout.java b/src/main/java/com/archos/mediacenter/video/player/VideoZoomLayout.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..8fc6dc5b3fe72d4af5d3b633b9ca3def04efd469
+--- /dev/null
++++ b/src/main/java/com/archos/mediacenter/video/player/VideoZoomLayout.java
+@@ -0,0 +1,76 @@
++/*
++ * SPDX-License-Identifier: Apache-2.0
++ */
++package com.archos.mediacenter.video.player;
++
++/** Aspect-preserving destination size; intentionally independent of the decoded buffer size. */
++final class VideoZoomLayout {
++    // Largest size representable by Android's 30-bit MeasureSpec size field.
++    private static final int MAX_LAYOUT_SIZE = 0x3fffffff;
++
++    static final int MANUAL_MIN_PERCENT = 100;
++    private static final int MANUAL_MAX_PERCENT = 200;
++    private static final int MANUAL_STEP_PERCENT = 3;
++
++    private VideoZoomLayout() {}
++
++    static int clampManualPercent(int percent) {
++        return Math.min(MANUAL_MAX_PERCENT, Math.max(MANUAL_MIN_PERCENT, percent));
++    }
++
++    static int stepManualPercent(int percent, boolean increase) {
++        return clampManualPercent(clampManualPercent(percent)
++                + (increase ? MANUAL_STEP_PERCENT : -MANUAL_STEP_PERCENT));
++    }
++
++    static Size manual(int viewportWidth, int viewportHeight, double aspect, int percent) {
++        if (isValid(viewportWidth, viewportHeight, aspect)) {
++            double scale = clampManualPercent(percent) / 100.0;
++            double width = Math.min(viewportWidth, viewportHeight * aspect);
++            long w = Math.round(width * scale);
++            long h = Math.round(width / aspect * scale);
++            if (isLayoutSize(w) && isLayoutSize(h)) return new Size((int) w, (int) h);
++        }
++        return new Size(viewportWidth, viewportHeight);
++    }
++
++    static Size fitHeight(int viewportWidth, int viewportHeight, double aspect) {
++        if (isValid(viewportWidth, viewportHeight, aspect)) {
++            long width = Math.round(viewportHeight * aspect);
++            if (isLayoutSize(width)) return new Size((int) width, viewportHeight);
++        }
++        return new Size(viewportWidth, viewportHeight);
++    }
++
++    static Size cover(int viewportWidth, int viewportHeight, double aspect) {
++        if (isValid(viewportWidth, viewportHeight, aspect)) {
++            if (aspect >= (double) viewportWidth / viewportHeight) {
++                long width = (long) Math.ceil(viewportHeight * aspect);
++                if (isLayoutSize(width)) return new Size(Math.max(viewportWidth, (int) width), viewportHeight);
++            } else {
++                long height = (long) Math.ceil(viewportWidth / aspect);
++                if (isLayoutSize(height)) return new Size(viewportWidth, Math.max(viewportHeight, (int) height));
++            }
++        }
++        return new Size(viewportWidth, viewportHeight);
++    }
++
++    private static boolean isValid(int width, int height, double aspect) {
++        return width > 0 && height > 0 && aspect > 0
++                && !Double.isNaN(aspect) && !Double.isInfinite(aspect);
++    }
++
++    private static boolean isLayoutSize(long size) {
++        return size > 0 && size <= MAX_LAYOUT_SIZE;
++    }
++
++    static final class Size {
++        final int width;
++        final int height;
++
++        Size(int width, int height) {
++            this.width = width;
++            this.height = height;
++        }
++    }
++}
+diff --git a/test/VideoZoomLayoutTest.java b/test/VideoZoomLayoutTest.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..ea46e0a134ca62584999dbe8b470e7ad6e29669e
+--- /dev/null
++++ b/test/VideoZoomLayoutTest.java
+@@ -0,0 +1,99 @@
++/* SPDX-License-Identifier: Apache-2.0 */
++package com.archos.mediacenter.video.player;
++
++/** Standalone geometry tests: see the javac/java commands in the patch handoff. */
++public final class VideoZoomLayoutTest {
++    public static void main(String[] args) {
++        // Scope, 4:3, portrait, matching 16:9, and a tall viewport.
++        height(1920, 1080, 2.39, 2581, 1080);
++        height(1920, 1080, 4.0 / 3, 1440, 1080);
++        height(1920, 1080, 9.0 / 16, 608, 1080);
++        height(1920, 1080, 16.0 / 9, 1920, 1080);
++        height(1080, 1920, 16.0 / 9, 3413, 1920);
++        cover(1920, 1080, 2.39, 2582, 1080);
++        cover(1920, 1080, 4.0 / 3, 1920, 1440);
++        cover(1920, 1080, 9.0 / 16, 1920, 3414);
++        cover(1920, 1080, 16.0 / 9, 1920, 1080);
++        cover(1080, 1920, 16.0 / 9, 3414, 1920);
++        // Effective aspect already includes a non-square pixel ratio.
++        height(1920, 1080, (720.0 / 576) * (64.0 / 45), 1920, 1080);
++        // Cover must be large enough in both dimensions, even for fractional pixels.
++        cover(853, 480, 16.0 / 9, 854, 480);
++        // Invalid aspect/viewport: leave viewport unchanged, not a zero or overflow.
++        height(1920, 1080, Double.NaN, 1920, 1080);
++        cover(1920, 1080, Double.POSITIVE_INFINITY, 1920, 1080);
++        cover(1920, 1080, 0, 1920, 1080);
++        cover(1920, 1080, 1e-12, 1920, 1080);
++        cover(0, 1080, 2.39, 0, 1080);
++        manual();
++        modes();
++        System.out.println("17 automatic geometry cases, 14 manual checks and mode-mapping regressions passed");
++    }
++
++    private static void manual() {
++        // A 100% manual reset fits the complete picture, even after auto-cover.
++        check(VideoZoomLayout.manual(1920, 1080, 2.4, 100), 1920, 800);
++        check(VideoZoomLayout.manual(1920, 1080, 2.4, 125), 2400, 1000);
++        check(VideoZoomLayout.manual(1920, 1080, 4.0 / 3, 150), 2160, 1620);
++        check(VideoZoomLayout.manual(1920, 1080, 9.0 / 16, 200), 1215, 2160);
++        // Baked fixture: 268 picture rows inside a 360-row 16:9 frame.
++        VideoZoomLayout.Size at130 = VideoZoomLayout.manual(1920, 1080, 16.0 / 9, 130);
++        VideoZoomLayout.Size at140 = VideoZoomLayout.manual(1920, 1080, 16.0 / 9, 140);
++        if (at130.height * 268 < 1080 * 360 && at140.height * 268 >= 1080 * 360) {
++            check(at140, 2688, 1512);
++        } else {
++            throw new AssertionError("Baked bars must remain at 130% and be outside the viewport at 140%");
++        }
++        check(VideoZoomLayout.manual(1920, 1080, 16.0 / 9, 0), 1920, 1080);
++        check(VideoZoomLayout.manual(1920, 1080, 16.0 / 9, 999), 3840, 2160);
++        check(VideoZoomLayout.manual(1920, 1080, Double.NaN, 150), 1920, 1080);
++        percent(100, false, 100);
++        percent(100, true, 103);
++        percent(103, false, 100);
++        percent(135, true, 138);
++        percent(199, true, 200);
++        percent(200, true, 200);
++    }
++
++    private static void percent(int before, boolean increase, int expected) {
++        int actual = VideoZoomLayout.stepManualPercent(before, increase);
++        if (actual != expected) {
++            throw new AssertionError("Expected " + expected + "%, got " + actual + "%");
++        }
++    }
++
++    private static void modes() {
++        int[] fullOrder = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9};
++        int[] standardOrder = {0, 1, 2, 3, 4, 5, 6, 8, 9};
++        if (!java.util.Arrays.equals(fullOrder, VideoDisplayMode.cycleIds(true))
++                || !java.util.Arrays.equals(standardOrder, VideoDisplayMode.cycleIds(false))) {
++            throw new AssertionError("Changed legacy order or AUTO eligibility");
++        }
++        for (int i = 0; i < fullOrder.length; i++) {
++            if (VideoDisplayMode.fromTvMenuPosition(i) != fullOrder[i]
++                    || VideoDisplayMode.toTvMenuPosition(fullOrder[i]) != i) {
++                throw new AssertionError("TV menu ID round trip failed for " + i);
++            }
++        }
++        if (VideoDisplayMode.fromTvMenuPosition(-1) != -1
++                || VideoDisplayMode.fromTvMenuPosition(fullOrder.length) != -1
++                || VideoDisplayMode.toTvMenuPosition(12345) != -1) {
++            throw new AssertionError("Invalid TV menu item mapped to a valid mode");
++        }
++    }
++
++    private static void height(int w, int h, double ar, int ew, int eh) {
++        check(VideoZoomLayout.fitHeight(w, h, ar), ew, eh);
++    }
++
++    private static void cover(int w, int h, double ar, int ew, int eh) {
++        check(VideoZoomLayout.cover(w, h, ar), ew, eh);
++    }
++
++    private static void check(VideoZoomLayout.Size actual, int w, int h) {
++        if (actual.width != w || actual.height != h) {
++            throw new AssertionError("Expected " + w + "x" + h + ", got "
++                    + actual.width + "x" + actual.height);
++        }
++    }
++}

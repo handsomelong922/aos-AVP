@@ -1,0 +1,160 @@
+diff --git a/AndroidManifest.xml b/AndroidManifest.xml
+index 24531edaf1a9656fad6d2b8e021fbc529fb6f2d4..a0ed48dfef4b9e3f9c4d1830df9a170c2a530107 100644
+--- a/AndroidManifest.xml
++++ b/AndroidManifest.xml
+@@ -18,8 +18,6 @@
+     xmlns:dist="http://schemas.android.com/apk/distribution"
+     xmlns:tools="http://schemas.android.com/tools"
+     android:installLocation="auto"
+-    android:sharedUserId="archos.openmediacenter"
+-    android:sharedUserMaxSdkVersion="32"
+     tools:ignore="UnusedAttribute">
+ 
+     <supports-screens android:largeScreens="true" />
+@@ -198,7 +196,7 @@
+              query the suggestion cursor. -->
+         <provider
+             android:name="com.archos.mediacenter.video.browser.SearchProviderVideo"
+-            android:authorities="browser.SearchProviderVideocommunity"
++            android:authorities="org.courville.nova.zoom.search"
+             android:exported="true"
+             android:readPermission="android.permission.GLOBAL_SEARCH" />
+ 
+@@ -1248,7 +1246,7 @@
+         <!-- ContentProvider for media -->
+         <provider
+             android:name="com.archos.mediaprovider.video.VideoProvider"
+-            android:authorities="com.archos.media.videocommunity;com.archos.media.scrapercommunity"
++            android:authorities="org.courville.nova.zoom.video;org.courville.nova.zoom.scraper"
+             android:exported="true"
+             tools:ignore="ExportedContentProvider" />
+         <!-- BroadcastReceiver to trigger database import -->
+diff --git a/build.gradle b/build.gradle
+index c03ba2da14a14bbadba307535395c2b0f7a8d66a..ca521455fc0379c9ec81fc290b26f147c4815526 100644
+--- a/build.gradle
++++ b/build.gradle
+@@ -122,6 +122,7 @@ android {
+     packagingOptions {
+         jniLibs {
+             useLegacyPackaging = true
++            keepDebugSymbols += ["**/*.so"]
+         }
+     }
+     compileOptions {
+@@ -151,7 +152,7 @@ android {
+         }
+     }
+     defaultConfig {
+-        applicationId = "org.courville.nova"
++        applicationId = "org.courville.nova.zoom"
+         generatedDensities = []
+         minSdkVersion 23
+         targetSdkVersion 36
+@@ -166,7 +167,7 @@ android {
+             // override versionName and versionCode to get it dependent on the date
+             versionName = versionName + "-" + getFormattedDate()
+             // 2549909 is 20221124 last Google play release to reset counter
+-            versionCode = 2549909 + getDate()
++            versionCode = Math.max(2675799, 2549909 + getDate())
+         }
+         //archivesBaseName = "" + applicationId + "-" + versionCode + "-" + versionName
+         project.extensions.getByType(BasePluginExtension).archivesName.set(applicationId + "-" + versionCode + "-" + versionName)
+@@ -215,7 +216,7 @@ android {
+         abi {
+             enable = true
+             reset()
+-            include 'armeabi-v7a', 'arm64-v8a', 'x86', 'x86_64'
++            include 'armeabi-v7a', 'arm64-v8a'
+             if (project.hasProperty("universal")) {
+                 // universal if for fdroid now with specific version(Name|Code) and oneapk for amazon
+                 enable = false
+diff --git a/res/values/donottranslate.xml b/res/values/donottranslate.xml
+index 42d0bb620d405f58ec7f4e0a8672bf4b09970eea..c577d80a7452e24512811637d796d4e27a0ddf4d 100644
+--- a/res/values/donottranslate.xml
++++ b/res/values/donottranslate.xml
+@@ -28,7 +28,7 @@
+     <string name="media_library_export_prefkey">media_library_export_prefkey</string>
+     <string name="media_library_import_prefkey">media_library_import_prefkey</string>
+ 
+-    <string name="nova">Nova Video Player</string>
++    <string name="nova">NOVA Zoom</string>
+ 
+     <string name="resolution_4k">4k</string>
+     // do not say p since it can be i too
+diff --git a/res/xml/androidtv_searchable_video.xml b/res/xml/androidtv_searchable_video.xml
+index fa90720fc0debddf23b50d45c43bbd4d70630af8..be7055a650969f064f49c0fedf0ad2f04135fd30 100644
+--- a/res/xml/androidtv_searchable_video.xml
++++ b/res/xml/androidtv_searchable_video.xml
+@@ -18,9 +18,9 @@
+ <searchable xmlns:android="http://schemas.android.com/apk/res/android"
+      android:label="@string/nova"
+      android:searchSettingsDescription="@string/all_movies_and_tv_shows"
+-     android:searchSuggestAuthority="com.archos.mediacenter.videocommunity.leanback.search.VideoSearchProvider"
++     android:searchSuggestAuthority="org.courville.nova.zoom.leanback.search.VideoSearchProvider"
+      android:searchSuggestIntentAction="android.intent.action.VIEW"
+-     android:searchSuggestIntentData="content://com.archos.media/external/video/media"
++     android:searchSuggestIntentData="content://org.courville.nova.zoom.video/external/video/media"
+      android:searchSuggestSelection=" ?"
+      android:searchSuggestThreshold="3"
+      android:includeInGlobalSearch="true" >
+diff --git a/res/xml/searchable_video.xml b/res/xml/searchable_video.xml
+index 873ef18a9c37ef2a3a4fb19bc62d6b7fc987270a..bd0137dc0648e2f871046d437c7f239026c57dde 100644
+--- a/res/xml/searchable_video.xml
++++ b/res/xml/searchable_video.xml
+@@ -18,10 +18,10 @@
+ <searchable xmlns:android="http://schemas.android.com/apk/res/android"
+             android:label="@string/nova"
+             android:includeInGlobalSearch="true"
+-            android:searchSuggestAuthority="browser.SearchProviderVideocommunity"
++            android:searchSuggestAuthority="org.courville.nova.zoom.search"
+             android:searchSuggestThreshold="3"
+             android:searchSuggestIntentAction="android.intent.action.VIEW"
+-            android:searchSuggestIntentData="content://com.archos.media/external/video/media"
++            android:searchSuggestIntentData="content://org.courville.nova.zoom.video/external/video/media"
+             android:searchSuggestSelection=" ?"
+             android:searchSettingsDescription="@string/all_movies_and_tv_shows"
+ />
+diff --git a/res/xml/shortcuts.xml b/res/xml/shortcuts.xml
+index 5f9043078989546c5cda70328f7900e73dd0f2f1..f0769a771a3349282c0260adde4b406c9b6fa916 100644
+--- a/res/xml/shortcuts.xml
++++ b/res/xml/shortcuts.xml
+@@ -24,7 +24,7 @@
+         >
+         <intent
+             android:action="com.archos.mediacenter.video.action_resume"
+-            android:targetPackage="com.archos.mediacenter.videocommunity"
++            android:targetPackage="org.courville.nova.zoom"
+             android:targetClass="com.archos.mediacenter.video.browser.MainActivity" />
+     </shortcut>
+     <shortcut
+@@ -35,7 +35,7 @@
+         >
+         <intent
+             android:action="com.archos.mediacenter.video.action_recently_played"
+-            android:targetPackage="com.archos.mediacenter.videocommunity"
++            android:targetPackage="org.courville.nova.zoom"
+             android:targetClass="com.archos.mediacenter.video.browser.MainActivity" />
+     </shortcut>
+     <shortcut
+@@ -46,7 +46,7 @@
+         >
+         <intent
+             android:action="com.archos.mediacenter.video.action_recently_added"
+-            android:targetPackage="com.archos.mediacenter.videocommunity"
++            android:targetPackage="org.courville.nova.zoom"
+             android:targetClass="com.archos.mediacenter.video.browser.MainActivity" />
+     </shortcut>
+ </shortcuts>
+diff --git a/src/main/java/com/archos/mediacenter/video/utils/PlayUtils.java b/src/main/java/com/archos/mediacenter/video/utils/PlayUtils.java
+index bfd068bc07d774a65d1928caa66158f97851837c..b663000367afd6f0aac2fd7254abab165cf37607 100644
+--- a/src/main/java/com/archos/mediacenter/video/utils/PlayUtils.java
++++ b/src/main/java/com/archos/mediacenter/video/utils/PlayUtils.java
+@@ -358,7 +358,7 @@ public class PlayUtils implements IndexHelper.Listener {
+                     } else {
+                         // TODO FIXME passing file to 3rd party player is not working
+                         subFile = new File(subPath);
+-                        subUri = FileProvider.getUriForFile(context, "org.courville.nova.provider", subFile);
++                        subUri = FileProvider.getUriForFile(context, context.getApplicationContext().getPackageName() + ".provider", subFile);
+                         MxSubPaths.add(subUri);
+                     }
+                     if (log.isDebugEnabled()) log.debug("onResumeReady: subPath {} -> subUri {}-> subLanguage {}", subPath, subUri, subLanguage);
