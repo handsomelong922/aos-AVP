@@ -55,7 +55,7 @@ index c03ba2da14a14bbadba307535395c2b0f7a8d66a..ca521455fc0379c9ec81fc290b26f147
              versionName = versionName + "-" + getFormattedDate()
              // 2549909 is 20221124 last Google play release to reset counter
 -            versionCode = 2549909 + getDate()
-+            versionCode = Math.max(2675803, 2549909 + getDate())
++            versionCode = Math.max(2675841, 2549909 + getDate())
          }
          //archivesBaseName = "" + applicationId + "-" + versionCode + "-" + versionName
          project.extensions.getByType(BasePluginExtension).archivesName.set(applicationId + "-" + versionCode + "-" + versionName)

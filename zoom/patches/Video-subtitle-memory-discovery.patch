@@ -1,0 +1,620 @@
+diff --git a/src/main/java/com/archos/mediacenter/video/browser/subtitlesmanager/LocalSubtitleMatch.java b/src/main/java/com/archos/mediacenter/video/browser/subtitlesmanager/LocalSubtitleMatch.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..4a5a951f8f822af52fca346dd3705a65ba5e37b6
+--- /dev/null
++++ b/src/main/java/com/archos/mediacenter/video/browser/subtitlesmanager/LocalSubtitleMatch.java
+@@ -0,0 +1,181 @@
++/* SPDX-License-Identifier: Apache-2.0 */
++package com.archos.mediacenter.video.browser.subtitlesmanager;
++
++import java.util.HashSet;
++import java.util.Locale;
++import java.util.Set;
++import java.util.regex.Matcher;
++import java.util.regex.Pattern;
++
++/** Conservative, filename-only matching for local auto-discovery; never opens a source. */
++public final class LocalSubtitleMatch {
++    private static final Pattern EPISODE = Pattern.compile(
++            "(?:^|[^\\p{L}\\p{N}])(?:s(\\d{1,3})e(\\d{1,4})|(\\d{1,3})x(\\d{1,4}))(?=$|[^\\p{L}\\p{N}])",
++            Pattern.CASE_INSENSITIVE);
++    private static final Pattern OWNED_DISPLAY = Pattern.compile(
++            "^(.*)\\.nova-(?:local|manual)-[a-f0-9]{24}-[a-f0-9]{24}\\.(.+)$");
++    private static final Set<String> LANGUAGES = new HashSet<>();
++    static {
++        for (String language : Locale.getISOLanguages()) {
++            LANGUAGES.add(language);
++            try {
++                LANGUAGES.add(Locale.forLanguageTag(language).getISO3Language());
++            } catch (java.util.MissingResourceException unavailable) {
++                // Some vendor builds ship a reduced locale table.
++            }
++        }
++        java.util.Collections.addAll(LANGUAGES, "chs", "cht", "zho", "chi", "und");
++    }
++
++    private LocalSubtitleMatch() {}
++
++    public static String stem(String name) {
++        int dot = name != null ? name.lastIndexOf('.') : -1;
++        return name == null ? "" : dot > 0 ? name.substring(0, dot) : name;
++    }
++
++    public static String leaf(String path) {
++        if (path == null) return "";
++        return path.substring(path.lastIndexOf('/') + 1);
++    }
++
++    public static boolean matches(String videoName, String subtitleName) {
++        return variant(videoName, subtitleName) != null;
++    }
++
++    /** Relative extension and a validated label, e.g. zh-hant.ass, never the earlier episode's name. */
++    public static String variant(String videoName, String subtitleName) {
++        if (subtitleName == null || subtitleName.lastIndexOf('.') <= 0) return null;
++        String video = stem(videoName).toLowerCase(Locale.ROOT);
++        String subtitle = stem(subtitleName).toLowerCase(Locale.ROOT);
++        if (video.isEmpty()) return null;
++        String extension = subtitleName.substring(subtitleName.lastIndexOf('.') + 1).toLowerCase(Locale.ROOT);
++        String label = null;
++        if (subtitle.equals(video)) label = "";
++        else if (subtitle.startsWith(video + ".")) {
++            String extra = subtitle.substring(video.length() + 1);
++            if (isLabel(extra, true)) label = extra;
++        }
++        if (label == null) {
++            Episode v = episode(video);
++            Episode s = episode(subtitle);
++            if (v != null && s != null && v.series.equals(s.series)
++                    && v.season == s.season && v.episode == s.episode) {
++                String tail = subtitle.substring(s.end).replaceFirst("^[ ._\\-]+", "");
++                // Different release/episode titles can be safe only if the series+episode are exact;
++                // an unknown trailing label is not inferred as a reusable preference.
++                if (!tail.isEmpty() && !isLabel(tail, false)) return null;
++                label = tail;
++            }
++        }
++        return label == null ? null : label + "." + extension;
++    }
++
++    /** Unique owned cache namespace; the filename still starts with the video stem for AVOS. */
++    public static String cachePrefix(String videoName, String videoIdentity) {
++        return stem(videoName) + ".nova-local-" + digestTag(videoIdentity) + "-";
++    }
++
++    public static String cacheName(String videoName, String videoIdentity, String sidecarIdentity, String variant) {
++        return cachePrefix(videoName, videoIdentity) + digestTag(stem(sidecarIdentity)) + "." + variant;
++    }
++
++    public static String manualCacheName(String videoName, String videoIdentity, String sidecarIdentity, String variant) {
++        return manualCachePrefix(videoName, videoIdentity) + digestTag(stem(sidecarIdentity)) + "." + variant;
++    }
++
++    public static String manualCachePrefix(String videoName, String videoIdentity) {
++        return stem(videoName) + ".nova-manual-" + digestTag(videoIdentity) + "-";
++    }
++
++    public static String cachedVariant(String videoName, String videoIdentity, String subtitleName) {
++        String prefix = cachePrefix(videoName, videoIdentity);
++        if (!subtitleName.startsWith(prefix)) {
++            prefix = manualCachePrefix(videoName, videoIdentity);
++            if (!subtitleName.startsWith(prefix)) return null;
++        }
++        String rest = subtitleName.substring(prefix.length());
++        int dot = rest.indexOf('.');
++        return dot == 24 && rest.substring(0, dot).matches("[a-f0-9]{24}")
++                && dot + 1 < rest.length() ? rest.substring(dot + 1) : null;
++    }
++
++    private static String digestTag(String value) {
++        try {
++            byte[] digest = java.security.MessageDigest.getInstance("SHA-256")
++                    .digest(value.getBytes(java.nio.charset.StandardCharsets.UTF_8));
++            StringBuilder out = new StringBuilder(24);
++            for (int i = 0; i < 12; i++) {
++                out.append(Character.forDigit((digest[i] >>> 4) & 15, 16));
++                out.append(Character.forDigit(digest[i] & 15, 16));
++            }
++            return out.toString();
++        } catch (java.security.NoSuchAlgorithmException e) {
++            throw new AssertionError("Android requires SHA-256", e);
++        }
++    }
++
++    static String ownedDisplayName(String name) {
++        if (name == null) return null;
++        Matcher match = OWNED_DISPLAY.matcher(name);
++        if (!match.matches()) return name;
++        String variant = match.group(2);
++        if (variant.startsWith("manual.")) return match.group(1) + variant.substring("manual".length());
++        return match.group(1) + (variant.startsWith(".") ? "" : ".") + variant;
++    }
++
++    public static boolean hasOwnedMarker(String subtitleName) {
++        return subtitleName.contains(".nova-local-") || subtitleName.contains(".nova-manual-");
++    }
++
++    public static String series(String videoName) {
++        Episode episode = episode(stem(videoName).toLowerCase(Locale.ROOT));
++        return episode == null ? null : episode.series + ":" + episode.season;
++    }
++
++    public static boolean dedicatedDirectory(String videoName, String directory) {
++        return directory != null && !directory.isEmpty() && stem(videoName).equalsIgnoreCase(directory);
++    }
++
++    public static boolean generic(String subtitleName) {
++        String name = stem(subtitleName).toLowerCase(Locale.ROOT);
++        return !name.isEmpty() && isLabel(name, false);
++    }
++
++    private static boolean isLabel(String value, boolean allowIndex) {
++        for (String label : value.split("\\.", -1)) {
++            if (allowIndex && label.matches("[0-9]{1,3}")) continue;
++            if (label.equals("forced") || label.equals("sdh") || label.equals("cc")
++                    || label.equals("default") || label.equals("简体") || label.equals("繁体")) continue;
++            String[] parts = label.split("[-_]", -1);
++            if (!LANGUAGES.contains(parts[0])) return false;
++            for (int i = 1; i < parts.length; i++) {
++                if (!parts[i].matches("[a-z]{2}|[a-z]{4}|[0-9]{3}")) return false;
++            }
++        }
++        return true;
++    }
++
++    private static Episode episode(String stem) {
++        Matcher matcher = EPISODE.matcher(stem);
++        if (!matcher.find()) return null;
++        String series = stem.substring(0, matcher.start()).replaceAll("[^\\p{L}\\p{N}]+", " ").trim();
++        if (series.isEmpty()) return null;
++        Episode result = new Episode(series,
++                Integer.parseInt(matcher.group(1) != null ? matcher.group(1) : matcher.group(3)),
++                Integer.parseInt(matcher.group(2) != null ? matcher.group(2) : matcher.group(4)),
++                matcher.end());
++        return matcher.find() ? null : result; // Multi-episode release is deliberately not inferred.
++    }
++
++    private static final class Episode {
++        final String series;
++        final int season, episode, end;
++        Episode(String series, int season, int episode, int end) {
++            this.series = series;
++            this.season = season;
++            this.episode = episode;
++            this.end = end;
++        }
++    }
++}
+diff --git a/src/main/java/com/archos/mediacenter/video/browser/subtitlesmanager/SubtitleManager.java b/src/main/java/com/archos/mediacenter/video/browser/subtitlesmanager/SubtitleManager.java
+index c475e5e3935a8216e924fafbd9e67bee4e923e9c..33fddc241db945698012f557ad586ab327d74659 100644
+--- a/src/main/java/com/archos/mediacenter/video/browser/subtitlesmanager/SubtitleManager.java
++++ b/src/main/java/com/archos/mediacenter/video/browser/subtitlesmanager/SubtitleManager.java
+@@ -20,10 +20,13 @@ import static com.archos.mediacenter.video.browser.subtitlesmanager.ISO639codes.
+ 
+ import android.content.Context;
+ import android.content.Intent;
++import android.content.SharedPreferences;
+ import android.net.Uri;
++import android.os.Build;
+ import android.os.Handler;
+ import android.os.Looper;
+ import android.os.NetworkOnMainThreadException;
++import android.provider.DocumentsContract;
+ 
+ import com.archos.filecorelibrary.AuthenticationException;
+ import com.archos.filecorelibrary.CopyCutEngine;
+@@ -55,9 +58,12 @@ import java.net.URL;
+ import java.net.URLEncoder;
+ import java.util.ArrayList;
+ import java.util.Arrays;
++import java.util.HashSet;
+ import java.util.LinkedList;
++import java.util.Set;
+ import java.util.List;
+ import java.util.Locale;
++import java.util.Map;
+ import java.util.concurrent.ConcurrentHashMap;
+ import java.util.concurrent.CountDownLatch;
+ import java.util.concurrent.atomic.AtomicInteger;
+@@ -163,6 +169,7 @@ public class SubtitleManager {
+     }
+ 
+     private static List<String> prefetchedListOfSubs;
++    private static final Object LOCAL_COPY_LOCK = new Object();
+ 
+     private static List<String> listOfLocalSubs;
+ 
+@@ -459,6 +466,10 @@ public class SubtitleManager {
+         if (log.isDebugEnabled()) log.debug("privatePrefetchSub");
+         try {
+             MediaUtils.removeLastSubs(mContext);
++            if (FileUtils.isLocal(videoUri)) {
++                prefetchSafeLocalSidecars(videoUri);
++                return;
++            }
+             String baseName = getName(videoUri);
+             // Compute prefix early so we can purge stale cached subs for this video before
+             // copying fresh ones. Without this, renamed copies from a previous run (e.g.
+@@ -491,10 +502,7 @@ public class SubtitleManager {
+                     }
+                 }
+             }
+-            List<MetaFile2> subs;
+-            // do not prefetch first level subs for local files to avoid duplicate on local videos since they are already captured afterwards
+-            if (FileUtils.isLocal(videoUri)) subs = getSubtitleListExcludingFirstLevelSubs(videoUri);
+-            else subs = getSubtitleList(videoUri);
++            List<MetaFile2> subs = getSubtitleList(videoUri);
+             if (!subs.isEmpty() && subsDir != null){
+                 Uri target = Uri.fromFile(subsDir);
+                 final CountDownLatch latch = new CountDownLatch(subs.size()); // Initialize the CountDownLatch with a count of 1
+@@ -566,6 +574,184 @@ public class SubtitleManager {
+         }
+     }
+ 
++    private static boolean isSubtitleFolder(String name) {
++        return "sub".equalsIgnoreCase(name) || "subs".equalsIgnoreCase(name)
++                || "subtitle".equalsIgnoreCase(name) || "subtitles".equalsIgnoreCase(name);
++    }
++
++    /** Auto-load only proven matches. Keep the manual wizard's listing/deletion policy separate. */
++    private void prefetchSafeLocalSidecars(Uri video) throws Exception {
++        boolean document = "content".equalsIgnoreCase(video.getScheme());
++        // A single-document grant does not authorize guessing or scanning its siblings.
++        if (document && (Build.VERSION.SDK_INT < Build.VERSION_CODES.N || !DocumentsContract.isTreeUri(video))) return;
++        Uri parent = FileUtils.getParentUrl(video);
++        if (parent == null) return;
++        File targetDir = MediaUtils.getSubsDir(mContext);
++        String videoName = LocalSubtitleMatch.leaf(getName(video));
++        String videoIdentity = localVideoIdentity(video);
++        String ownedPrefix = LocalSubtitleMatch.cachePrefix(videoName, videoIdentity);
++        synchronized (LOCAL_COPY_LOCK) {
++            Set<String> currentFiles = new HashSet<>();
++            restoreManualAssociations(videoName, videoIdentity, targetDir);
++            try {
++                copyMatchingLocalSidecars(parent, videoName, videoIdentity, targetDir, currentFiles,
++                        document, false, false, 0);
++            } finally {
++                File[] cached = targetDir.listFiles();
++                if (cached != null) for (File file : cached) {
++                    if (file.getName().startsWith(ownedPrefix) && !currentFiles.contains(file.getName()))
++                        file.delete();
++                }
++            }
++        }
++    }
++
++    private static SharedPreferences manualAssociations(Context context) {
++        return context.getSharedPreferences("nova_local_subtitle_associations", Context.MODE_PRIVATE);
++    }
++
++    /** Values are only explicitly selected local source URIs, kept in app-private storage. */
++    public static File associateLocalFile(Context context, Uri video, Uri source, String variant, boolean remember) {
++        if (!FileUtils.isLocal(video) || !FileUtils.isLocal(source)) return null;
++        String videoName = LocalSubtitleMatch.leaf(getName(video));
++        String name = LocalSubtitleMatch.manualCacheName(videoName, localVideoIdentity(video),
++                source.toString(), variant);
++        File target = new File(MediaUtils.getSubsDir(context), name);
++        synchronized (LOCAL_COPY_LOCK) {
++            try {
++                // The existing wizard performs a synchronous association. Cap text copies
++                // there, without capping background discovery of paired graphical sidecars.
++                if (!copyLocalSubtitle(context, source, target, 8L * 1024 * 1024)) return null;
++                if (remember) manualAssociations(context).edit().putString(name, source.toString()).apply();
++                return target;
++            } catch (Exception e) {
++                return null;
++            }
++        }
++    }
++
++    public static List<File> getManualAssociations(Context context, Uri video) {
++        List<File> files = new ArrayList<>();
++        if (!FileUtils.isLocal(video)) return files;
++        String prefix = LocalSubtitleMatch.manualCachePrefix(LocalSubtitleMatch.leaf(getName(video)),
++                localVideoIdentity(video));
++        for (String name : manualAssociations(context).getAll().keySet()) {
++            if (name.startsWith(prefix)) files.add(new File(MediaUtils.getSubsDir(context), name));
++        }
++        return files;
++    }
++
++    public static boolean forgetManualAssociation(Context context, Uri video, Uri target) {
++        if (!FileUtils.isLocal(video) || target == null || target.getPath() == null) return false;
++        File file = new File(target.getPath());
++        if (!getManualAssociations(context, video).contains(file)) return false;
++        synchronized (LOCAL_COPY_LOCK) {
++            if (!file.exists() || file.delete()) {
++                manualAssociations(context).edit().remove(file.getName()).apply();
++                return true;
++            }
++        }
++        return false;
++    }
++
++    private void restoreManualAssociations(String videoName, String videoIdentity, File cache) {
++        String prefix = LocalSubtitleMatch.manualCachePrefix(videoName, videoIdentity);
++        for (Map.Entry<String, ?> record : manualAssociations(mContext).getAll().entrySet()) {
++            if (!record.getKey().startsWith(prefix) || !(record.getValue() instanceof String sourceString))
++                continue;
++            File target = new File(cache, record.getKey());
++            Uri source = Uri.parse(sourceString);
++            try {
++                if (!FileUtils.isLocal(source) || !copyLocalSubtitle(mContext, source, target, 8L * 1024 * 1024)) target.delete();
++            } catch (Exception unavailable) {
++                // Missing file or revoked access: do not substitute a stale cached subtitle.
++                target.delete();
++            }
++        }
++    }
++
++    private static boolean copyLocalSubtitle(Context context, Uri source, File target, long maxBytes) throws Exception {
++        File temp = File.createTempFile("nova-sub-", ".tmp", target.getParentFile());
++        try {
++            try (InputStream input = FileEditorFactory.getFileEditorForUrl(source, context).getInputStream()) {
++                if (input == null) return false;
++                try (FileOutputStream output = new FileOutputStream(temp)) {
++                    byte[] bytes = new byte[32768];
++                    int size;
++                    long total = 0;
++                    while ((size = input.read(bytes)) != -1) {
++                        total += size;
++                        if (total > maxBytes) return false;
++                        output.write(bytes, 0, size);
++                    }
++                }
++            }
++            return temp.renameTo(target);
++        } finally {
++            temp.delete();
++        }
++    }
++
++    /** File URI and ordinary absolute path refer to the same playback source. */
++    public static String localVideoIdentity(Uri video) {
++        if (video == null) return null;
++        String identity = video.toString();
++        return identity.startsWith("file://") ? identity.substring("file://".length()) : identity;
++    }
++
++    private void copyMatchingLocalSidecars(Uri dir, String videoName, String videoIdentity,
++            File targetDir, Set<String> currentFiles, boolean copyHere, boolean subtitleFolder,
++            boolean dedicated, int depth) throws Exception {
++        List<MetaFile2> files = RawListerFactoryWithUpnp.getRawListerForUrl(dir).getFileList();
++        if (files == null) return;
++        boolean allowGeneric = false;
++        if (depth == 0) {
++            int videos = 0;
++            for (MetaFile2 file : files) {
++                String extension = file.getExtension();
++                String mime = !file.isDirectory() && extension != null
++                        ? MimeUtils.guessMimeTypeFromExtension(extension.toLowerCase(Locale.ROOT)) : null;
++                if (mime != null && mime.startsWith("video/")) videos++;
++            }
++            allowGeneric = videos == 1 && LocalSubtitleMatch.series(videoName) == null;
++        }
++        for (MetaFile2 file : files) {
++            String name = file.getName();
++            if (file.isDirectory()) {
++                if (depth == 0 && isSubtitleFolder(name)) {
++                    copyMatchingLocalSidecars(file.getUri(), videoName, videoIdentity, targetDir,
++                            currentFiles, true, true, allowGeneric, depth + 1);
++                } else if (subtitleFolder && !dedicated && LocalSubtitleMatch.dedicatedDirectory(videoName, name)) {
++                    copyMatchingLocalSidecars(file.getUri(), videoName, videoIdentity, targetDir,
++                            currentFiles, true, true, true, depth + 1);
++                }
++                continue;
++            }
++            if (!copyHere || file.getExtension() == null
++                    || !VideoUtils.getSubtitleExtensions().contains(file.getExtension().toLowerCase(Locale.ROOT))) continue;
++            String variant = LocalSubtitleMatch.variant(videoName, name);
++            if (variant == null && dedicated && LocalSubtitleMatch.generic(name)) {
++                variant = name.toLowerCase(Locale.ROOT);
++            }
++            if (variant == null) continue;
++            String cacheName = LocalSubtitleMatch.cacheName(videoName, videoIdentity, file.getUri().toString(), variant);
++            File target = new File(targetDir, cacheName);
++            if (target.isFile() && target.length() == file.length() && target.lastModified() == file.lastModified()) {
++                currentFiles.add(cacheName);
++                continue;
++            }
++            // Failed or interrupted copies must not look like valid native subtitle tracks.
++            try {
++                if (copyLocalSubtitle(mContext, file.getUri(), target, Long.MAX_VALUE)) {
++                    target.setLastModified(file.lastModified());
++                    currentFiles.add(cacheName);
++                }
++            } catch (Exception inaccessible) {
++                // One inaccessible, oversized-name, or disappeared file must not mask other matches.
++            }
++        }
++    }
++
+     private static String stripExtension(Uri video){
+         final String videoFileName = getName(video);
+         final String videoExtension = MimeUtils.getExtension(videoFileName);
+@@ -797,9 +983,11 @@ public class SubtitleManager {
+ 
+     public static String convertYTSSubNamingExceptions(String name) {
+         String lowercaseName = name.toLowerCase(Locale.ROOT);
+-        if (lowercaseName.endsWith("simplified.chi") || lowercaseName.endsWith("zh-cn")) {
++        if (lowercaseName.endsWith("simplified.chi") || lowercaseName.endsWith("zh-cn")
++                || lowercaseName.endsWith("zh-hans")) {
+             return "s_chinese_simplified";
+-        } else if (lowercaseName.endsWith("traditional.chi") || lowercaseName.endsWith("zh-tw")) {
++        } else if (lowercaseName.endsWith("traditional.chi") || lowercaseName.endsWith("zh-tw")
++                || lowercaseName.endsWith("zh-hant")) {
+             return "s_traditional_chinese";
+         } else if (lowercaseName.endsWith("brazilian.por") || lowercaseName.endsWith("pt-br")) {
+             return "s_brazilian";
+@@ -815,10 +1003,11 @@ public class SubtitleManager {
+     }
+ 
+     public static String getSubLanguageFromSubPathAndVideoPath(Context context, String subPath, String videoPath) {
+-        String subFilenameWithoutExtension = stripExtensionFromName(getName(subPath));
++        String displayName = LocalSubtitleMatch.ownedDisplayName(getName(subPath));
++        String subFilenameWithoutExtension = stripExtensionFromName(displayName);
+         String videoFilenameWithoutExtension = stripExtensionFromName(getName(videoPath));
+         if (subFilenameWithoutExtension.equals(videoFilenameWithoutExtension)) {
+-            String extension = MimeUtils.getExtension(getName(subPath));
++            String extension = MimeUtils.getExtension(displayName);
+             String formatName = extension != null ? extension.toUpperCase(Locale.US) : "SRT";
+             if (log.isDebugEnabled()) log.debug("getSubLanguageFromSubPathAndVideoPath: video and sub have same name {} -> {}", subFilenameWithoutExtension, formatName);
+             return formatName;
+diff --git a/src/main/java/com/archos/mediacenter/video/leanback/wizard/SubtitlesWizardFragment.java b/src/main/java/com/archos/mediacenter/video/leanback/wizard/SubtitlesWizardFragment.java
+index e1f3ab20424ad1dd6d15ad4d788d128326cc8d4f..6908ef42f029d45bb5b6d3e9579718ff3e087de0 100644
+--- a/src/main/java/com/archos/mediacenter/video/leanback/wizard/SubtitlesWizardFragment.java
++++ b/src/main/java/com/archos/mediacenter/video/leanback/wizard/SubtitlesWizardFragment.java
+@@ -15,6 +15,7 @@
+ package com.archos.mediacenter.video.leanback.wizard;
+ 
+ import android.app.Activity;
++import android.content.Intent;
+ import android.os.Bundle;
+ import androidx.annotation.NonNull;
+ import androidx.core.content.ContextCompat;
+@@ -113,7 +114,18 @@ public class SubtitlesWizardFragment extends GuidedStepSupportFragment {
+ 
+                     if (fileAssociated) {
+                         setActions(createActions());
+-                        getActivity().setResult(Activity.RESULT_OK);
++                        String target = mWizardCommon.getLastAssociatedSubtitlePath();
++                        if (target != null) {
++                            Intent result = new Intent();
++                            result.putExtra(SubtitlesWizardCommon.EXTRA_ASSOCIATED_VIDEO,
++                                    mWizardCommon.getVideoUri().toString());
++                            result.putExtra(SubtitlesWizardCommon.EXTRA_ASSOCIATED_SUBTITLE_PATH, target);
++                            result.putExtra(SubtitlesWizardCommon.EXTRA_ASSOCIATION_GENERATION,
++                                    getActivity().getIntent().getStringExtra(SubtitlesWizardCommon.EXTRA_ASSOCIATION_GENERATION));
++                            getActivity().setResult(Activity.RESULT_OK, result);
++                        } else {
++                            getActivity().setResult(Activity.RESULT_OK);
++                        }
+ 
+                         return true;
+                     }
+diff --git a/src/main/java/com/archos/mediacenter/video/utils/SubtitlesDownloaderActivity2.java b/src/main/java/com/archos/mediacenter/video/utils/SubtitlesDownloaderActivity2.java
+index 03f34aa6f37960bc31d65702a7044049bc212a13..a78a66d50ea437e366986b303abff3b5e1cdd98c 100644
+--- a/src/main/java/com/archos/mediacenter/video/utils/SubtitlesDownloaderActivity2.java
++++ b/src/main/java/com/archos/mediacenter/video/utils/SubtitlesDownloaderActivity2.java
+@@ -55,6 +55,7 @@ import com.archos.mediacenter.utils.videodb.VideoDbInfo;
+ import com.archos.mediacenter.video.R;
+ import com.archos.mediacenter.video.browser.TorrentObserverService;
+ import com.archos.mediacenter.video.browser.subtitlesmanager.SubtitleManager;
++import com.archos.mediacenter.video.browser.subtitlesmanager.LocalSubtitleMatch;
+ import com.archos.mediacenter.video.ui.NovaProgressDialog;
+ import com.archos.mediaprovider.ArchosMediaIntent;
+ import com.archos.mediaprovider.video.VideoStore;
+@@ -606,8 +607,18 @@ public class SubtitlesDownloaderActivity2 extends AppCompatActivity {
+                 name = FileUtils.getFileNameWithoutExtension(Uri.parse(fileUrl));
+             localSb = new StringBuilder();
+             localSb.append(subsDir.getPath()).append('/').append(name).append('.').append(language).append('.').append("srt");
+-            if(!canWrite)
++            if (!canWrite) {
+                 sb = localSb;
++                Uri video = Uri.parse(fileUrl);
++                if (FileUtils.isLocal(video) && language != null && language.matches("[A-Za-z0-9_-]{1,20}")) {
++                    // Keep newly downloaded local sidecars discoverable on read-only USB,
++                    // without letting another video with the same basename claim them.
++                    String videoName = LocalSubtitleMatch.leaf(FileUtils.getName(video));
++                    String owned = LocalSubtitleMatch.manualCacheName(videoName, SubtitleManager.localVideoIdentity(video),
++                            "download." + language + ".srt", language + ".srt");
++                    sb = new StringBuilder(Uri.fromFile(new File(subsDir, owned)).toString());
++                }
++            }
+             if (log.isDebugEnabled()) log.debug("downloadSubtitles: download to {} from {} because canwrite={}", sb.toString(), subUrl, canWrite);
+             String srtURl = sb.toString();
+             sb = null;
+diff --git a/src/main/java/com/archos/mediacenter/video/utils/SubtitlesWizardCommon.java b/src/main/java/com/archos/mediacenter/video/utils/SubtitlesWizardCommon.java
+index 0f5226f0d910acc35507bc862b0c7a2dd20a096e..e26fcbef1da96c5de6d2e22970721ed2cb041427 100644
+--- a/src/main/java/com/archos/mediacenter/video/utils/SubtitlesWizardCommon.java
++++ b/src/main/java/com/archos/mediacenter/video/utils/SubtitlesWizardCommon.java
+@@ -31,6 +31,7 @@ import com.archos.filecorelibrary.MetaFile2Factory;
+ import com.archos.mediacenter.utils.MediaUtils;
+ import com.archos.mediacenter.video.R;
+ import com.archos.mediacenter.video.browser.subtitlesmanager.SubtitleManager;
++import com.archos.mediacenter.video.browser.subtitlesmanager.LocalSubtitleMatch;
+ 
+ import org.slf4j.Logger;
+ import org.slf4j.LoggerFactory;
+@@ -40,6 +41,9 @@ import java.util.ArrayList;
+ import java.util.List;
+ 
+ public class SubtitlesWizardCommon {
++    public static final String EXTRA_ASSOCIATED_VIDEO = "associated_video";
++    public static final String EXTRA_ASSOCIATED_SUBTITLE_PATH = "associated_subtitle_path";
++    public static final String EXTRA_ASSOCIATION_GENERATION = "subtitle_association_generation";
+ 
+     private static final Logger log = LoggerFactory.getLogger(SubtitlesWizardCommon.class);
+ 
+@@ -49,6 +53,11 @@ public class SubtitlesWizardCommon {
+ 
+     private String mVideoPath;
+     private Uri mVideoUri;
++    private String mLastAssociatedSubtitlePath;
++
++    public String getLastAssociatedSubtitlePath() {
++        return mLastAssociatedSubtitlePath;
++    }
+ 
+     private List<String> mCurrentFiles;
+     private int mCurrentFilesCount;
+@@ -149,6 +158,10 @@ public class SubtitlesWizardCommon {
+             log.error("buildCurrentSubtitlesFilesList error : failed to get data from SubtitleManager");
+         }
+         
++        for (File associated : SubtitleManager.getManualAssociations(getActivity(), mVideoUri)) {
++            String path = Uri.fromFile(associated).toString();
++            if (!mCurrentFiles.contains(path)) mCurrentFiles.add(path);
++        }
+         return mCurrentFiles.size();
+     }
+ 
+@@ -329,6 +342,13 @@ public class SubtitlesWizardCommon {
+      */
+     @SuppressWarnings("deprecation") // ACTION_MEDIA_SCANNER_SCAN_FILE used as internal IPC (setPackage targets Nova's own receiver only)
+     public boolean associateFile(String path, int index) {
++        mLastAssociatedSubtitlePath = null;
++        Uri source = Uri.parse(path);
++        String sourceExtension = FileUtils.getExtension(path);
++        if (FileUtils.isLocal(mVideoUri) && FileUtils.isLocal(source) && sourceExtension != null
++                && !sourceExtension.equalsIgnoreCase("idx") && !sourceExtension.equalsIgnoreCase("sub")) {
++            return copyLocalAssociation(source, sourceExtension, index);
++        }
+         if (renameFile(path, index)) {
+             return true;
+         }
+@@ -376,11 +396,34 @@ public class SubtitlesWizardCommon {
+         return fileAssociated;
+     }
+ 
++    private boolean copyLocalAssociation(Uri source, String extension, int index) {
++        String videoName = LocalSubtitleMatch.leaf(FileUtils.getName(mVideoUri));
++        String subtitleName = LocalSubtitleMatch.leaf(FileUtils.getName(source));
++        String variant = LocalSubtitleMatch.variant(videoName, subtitleName);
++        if (variant == null) variant = "manual." + extension.toLowerCase(java.util.Locale.ROOT);
++        File target = SubtitleManager.associateLocalFile(getActivity(), mVideoUri, source, variant,
++                !com.archos.mediacenter.video.player.PrivateMode.isActive());
++        if (target == null) return false;
++        mLastAssociatedSubtitlePath = target.getAbsolutePath();
++        mCurrentFiles.add(Uri.fromFile(target).toString());
++        mCurrentFilesCount++;
++        mAvailableFiles.remove(index);
++        mAvailableFilesCount--;
++        SubtitleManager.invalidateCache(mVideoUri);
++        return true;
++    }
++
+     @SuppressWarnings("deprecation") // ACTION_MEDIA_SCANNER_SCAN_FILE used as internal IPC (setPackage targets Nova's own receiver only)
+     public boolean deleteFile(String path, int index, boolean current) {
+         boolean fileDeleted = false;
+         
+         Uri uri = Uri.parse(path);
++        if (current && SubtitleManager.forgetManualAssociation(getActivity(), mVideoUri, uri)) {
++            mCurrentFiles.remove(index);
++            mCurrentFilesCount--;
++            SubtitleManager.invalidateCache(mVideoUri);
++            return true;
++        }
+         FileEditor file = FileEditorFactory.getFileEditorForUrl(uri, getActivity());
+         try {
+             file.delete();

@@ -13,15 +13,19 @@ for p in Video MediaLib FileCoreLibrary; do
     git -C "$src/$p" apply "$root/patches/packaging-overlay-$p.patch"
 done
 git -C "$src/Video" apply "$root/patches/Video-zoom.patch"
+git -C "$src/Video" apply "$root/patches/Video-subtitle-memory-discovery.patch" "$root/patches/Video-subtitle-memory-selection.patch"
 (
     cd "$src/Video"
     jvm=$(mktemp -d "$src/test.XXXXXX")
     pkg=src/main/java/com/archos/mediacenter/video/player
     android_jar="$sdk/platforms/android-37.0/android.jar"
     javac -cp "$android_jar" -d "$jvm" "$pkg/VideoDisplayMode.java" "$pkg/VideoZoomLayout.java" \
-        "$pkg/SubtitleDelayPreference.java" test/VideoZoomLayoutTest.java test/SubtitleDelayPreferenceTest.java
+        "$pkg/SubtitleDelayPreference.java" "$pkg/SubtitleMemoryPolicy.java" \
+        "$pkg/../browser/subtitlesmanager/LocalSubtitleMatch.java" \
+        test/VideoZoomLayoutTest.java test/SubtitleDelayPreferenceTest.java test/SubtitleMemoryPolicyTest.java
     java -cp "$jvm:$android_jar" com.archos.mediacenter.video.player.VideoZoomLayoutTest
     java -cp "$jvm:$android_jar" com.archos.mediacenter.video.player.SubtitleDelayPreferenceTest
+    java -cp "$jvm:$android_jar" com.archos.mediacenter.video.player.SubtitleMemoryPolicyTest
     bash ./gradlew --no-daemon --max-workers=4 --console=plain -Psponsor assembleNoamazonRelease lintNoamazonRelease -x :FileCoreLibrary:ndkBuild -x :MediaLib:ndkBuild
 )
 shopt -s nullglob

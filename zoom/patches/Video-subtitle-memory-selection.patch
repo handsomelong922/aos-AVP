@@ -1,0 +1,973 @@
+diff --git a/src/main/java/com/archos/mediacenter/video/player/LocalSubtitleSelection.java b/src/main/java/com/archos/mediacenter/video/player/LocalSubtitleSelection.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..be68fd93c758a2c7b873ab880fa095427922c9c2
+--- /dev/null
++++ b/src/main/java/com/archos/mediacenter/video/player/LocalSubtitleSelection.java
+@@ -0,0 +1,111 @@
++/* SPDX-License-Identifier: Apache-2.0 */
++package com.archos.mediacenter.video.player;
++
++import android.net.Uri;
++
++import com.archos.filecorelibrary.FileUtils;
++import com.archos.mediacenter.video.browser.subtitlesmanager.LocalSubtitleMatch;
++import com.archos.mediacenter.video.browser.subtitlesmanager.SubtitleManager;
++import com.archos.mediacenter.video.utils.VideoMetadata;
++
++import java.io.File;
++import java.util.HashMap;
++import java.util.Map;
++
++/** Identity and eligibility for this one local playback source. */
++final class LocalSubtitleSelection {
++    final String videoKey;
++    final String seriesKey;
++    private final String mVideoName;
++    private final String mVideoIdentity;
++    private final File mCacheDir;
++    private final File mDirectDir;
++
++    LocalSubtitleSelection(Uri video, File cacheDir) {
++        mVideoIdentity = SubtitleManager.localVideoIdentity(video);
++        mVideoName = LocalSubtitleMatch.leaf(FileUtils.getName(video));
++        videoKey = SubtitleMemoryPolicy.videoKey(mVideoIdentity);
++        String series = LocalSubtitleMatch.series(mVideoName);
++        Uri parent = series != null ? FileUtils.getParentUrl(video) : null;
++        seriesKey = parent != null ? SubtitleMemoryPolicy.seriesKey(SubtitleManager.localVideoIdentity(parent), series) : null;
++        mCacheDir = cacheDir;
++        mDirectDir = "content".equalsIgnoreCase(video.getScheme()) ? null
++                : new File(Uri.decode(mVideoIdentity)).getParentFile();
++    }
++
++    boolean eligible(VideoMetadata.SubtitleTrack track) {
++        if (track == null) return false;
++        if (!track.isExternal) return true;
++        String path = trackPath(track.path);
++        String name = LocalSubtitleMatch.leaf(path);
++        if (LocalSubtitleMatch.hasOwnedMarker(name)) return cachedVariant(name) != null;
++        // Native retains its normal movie handling. For episodic playback do not
++        // choose an old unnamed or basename-only copy from the shared legacy cache.
++        if (seriesKey == null) return true;
++        return !isLegacyCache(path) && mDirectDir != null
++                && mDirectDir.equals(new File(path).getParentFile()) && LocalSubtitleMatch.matches(mVideoName, name);
++    }
++
++    String[] identities(VideoMetadata metadata) {
++        String[] result = new String[metadata.getSubtitleTrackNb()];
++        Map<String, Integer> occurrences = new HashMap<>();
++        for (int i = 0; i < result.length; i++) {
++            VideoMetadata.SubtitleTrack track = metadata.getSubtitleTrack(i);
++            if (track == null) continue;
++            if (track.isExternal) {
++                String path = trackPath(track.path);
++                if (!isLegacyCache(path) || cachedVariant(LocalSubtitleMatch.leaf(path)) != null)
++                    result[i] = SubtitleMemoryPolicy.external(path, "");
++            } else {
++                String identity = SubtitleMemoryPolicy.embedded(track.name, track.language,
++                        track.kind, track.format, track.disposition);
++                int ordinal = occurrences.containsKey(identity) ? occurrences.get(identity) : 0;
++                occurrences.put(identity, ordinal + 1);
++                result[i] = SubtitleMemoryPolicy.withOrdinal(identity, ordinal);
++            }
++        }
++        return result;
++    }
++
++    String variant(VideoMetadata.SubtitleTrack track) {
++        if (seriesKey == null || track == null || !track.isExternal || !eligible(track)) return null;
++        String path = trackPath(track.path);
++        String name = LocalSubtitleMatch.leaf(path);
++        String cached = cachedVariant(name);
++        if (cached != null) return cached.startsWith("manual.") ? "owned:" : "cache:" + cached;
++        String direct = LocalSubtitleMatch.variant(mVideoName, name);
++        return direct != null ? "direct:" + direct : null;
++    }
++
++    int matchingAssociation(VideoMetadata metadata, String path) {
++        if (path == null) return -1;
++        path = trackPath(path);
++        if (isLegacyCache(path) && cachedVariant(LocalSubtitleMatch.leaf(path)) == null) return -1;
++        int match = -1;
++        for (int i = 0; i < metadata.getSubtitleTrackNb(); i++) {
++            VideoMetadata.SubtitleTrack track = metadata.getSubtitleTrack(i);
++            if (track != null && track.isExternal && path.equals(trackPath(track.path))) {
++                if (match != -1) return -1;
++                match = i;
++            }
++        }
++        return match;
++    }
++
++    private boolean isLegacyCache(String path) {
++        return mCacheDir != null && mCacheDir.equals(new File(path).getParentFile());
++    }
++
++    private String cachedVariant(String name) {
++        return LocalSubtitleMatch.cachedVariant(mVideoName, mVideoIdentity, name);
++    }
++
++    private static String trackPath(String path) {
++        if (path == null) return "";
++        if (path.startsWith("file://")) {
++            String decoded = Uri.parse(path).getPath();
++            if (decoded != null) return decoded;
++        }
++        return path;
++    }
++}
+diff --git a/src/main/java/com/archos/mediacenter/video/player/PlayerActivity.java b/src/main/java/com/archos/mediacenter/video/player/PlayerActivity.java
+index 99debdca65041546e45ac6de0bda5ddd24af4419..3d8ebd3064ae12f5e85481201f5c0512bbfe83b0 100644
+--- a/src/main/java/com/archos/mediacenter/video/player/PlayerActivity.java
++++ b/src/main/java/com/archos/mediacenter/video/player/PlayerActivity.java
+@@ -123,6 +123,7 @@ import com.archos.mediacenter.video.info.VideoInfoActivity;
+ import com.archos.mediacenter.video.info.VideoInfoCommonClass;
+ import com.archos.mediacenter.video.leanback.settings.VideoSettingsActivity;
+ import com.archos.mediacenter.video.leanback.wizard.SubtitlesWizardActivity;
++import com.archos.mediacenter.video.utils.SubtitlesWizardCommon;
+ import com.archos.mediacenter.video.player.TrackInfoController.TrackInfoListener;
+ import com.archos.mediacenter.video.player.tvmenu.AudioDelayTVPicker;
+ import com.archos.mediacenter.video.player.tvmenu.AudioSpeedTVPicker;
+@@ -256,6 +257,7 @@ public class PlayerActivity extends AppCompatActivity implements PlayerControlle
+     private static final int SUBTITLE_MENU_DELAY = 0;
+     private static final int SUBTITLE_MENU_SETTINGS = 1;
+     private static final int SUBTITLE_MENU_DOWNLOAD = 2;
++    private static final int SUBTITLE_MENU_LOCAL = 3;
+ 
+     // Menu items management
+     private static final int MENU_FILE_ACTIONS_GROUP = 10;
+@@ -304,7 +306,7 @@ public class PlayerActivity extends AppCompatActivity implements PlayerControlle
+ 
+     private final ActivityResultLauncher<Intent> subtitleLauncher = registerForActivityResult(
+             new ActivityResultContracts.StartActivityForResult(),
+-            result -> { if (result.getResultCode() == Activity.RESULT_OK) onSubtitleResult(); });
++            result -> { if (result.getResultCode() == Activity.RESULT_OK) onSubtitleResult(result.getData()); });
+ 
+     private boolean mHasAskedFloatingPermission;
+     private boolean mIsInfoActivityDisplayed;
+@@ -2078,9 +2080,9 @@ public class PlayerActivity extends AppCompatActivity implements PlayerControlle
+                 }
+             });
+ 
+-            Uri uri = VideoUtils.getFileUriFromMediaLibPath(mUri.toString());
++            Uri uri = mUri == null ? null : VideoUtils.getFileUriFromMediaLibPath(mUri.toString());
+ 
+-            if (uri.getScheme().equals("file") || uri.getScheme().startsWith("smb") || uri.getScheme().equals("sshj") || uri.getScheme().equals("sftp")) {
++            if (canChooseSubtitleOnDrive(uri)) {
+                 mSubtitleTVMenu.createAndAddTVMenuItem(getText(R.string.get_subtitles_on_drive).toString(), false, false).setOnClickListener(new View.OnClickListener() {
+                     @Override
+                     public void onClick(View v) {
+@@ -2517,12 +2519,13 @@ public class PlayerActivity extends AppCompatActivity implements PlayerControlle
+                 @Override
+                 public void onClick(View v) {
+                     // TODO Auto-generated method stub
+-                    int pos = mSubtitleTVMenu.getItemPostion(v);
+-                    if (pos != -1) {
++                    View row = v.getParent() instanceof TVMenuItem ? (View) v.getParent() : v;
++                    int pos = mSubtitleTVMenu.getItemPostion(row);
++                    if (pos >= 0 && pos < mSubtitleInfoController.getTrackCount()) {
+                         if (onTrackSelected(mSubtitleInfoController, pos, "", "")) {
+-                            if (v instanceof Checkable) {
++                            if (row instanceof Checkable) {
+                                 mSubtitleTVMenu.unCheckAll();
+-                                ((Checkable) v).setChecked(true);
++                                ((Checkable) row).setChecked(true);
+                             }
+                         }
+                     }
+@@ -4204,6 +4207,7 @@ public class PlayerActivity extends AppCompatActivity implements PlayerControlle
+                     newSubtitleTrack, newSubtitlePosition, playerPosition);
+             if (mPlayer.setSubtitleTrack(playerPosition)) {
+                 mVideoInfo.subtitleTrack = newSubtitleTrack;
++                rememberManualSubtitleTrack(newSubtitleTrack);
+                 mSubtitleInfoController.setTrack(subtitleTrackToPosition(mVideoInfo.subtitleTrack, mVideoInfo.nbSubtitles)); // +1 since none track is at position 0, for UI only
+                 if (mSubtitleInfoController.getTrack() == 0) { // 0 is nonePosition
+                     if (log.isDebugEnabled()) log.debug("switchSubtitleTrack: disableSubtitleDelayTVMenuItem(true) because nonePosition");
+@@ -4315,11 +4319,17 @@ public class PlayerActivity extends AppCompatActivity implements PlayerControlle
+             }
+         } else if (Objects.equals(trackInfoController, mSubtitleInfoController)) {
+             if (log.isDebugEnabled()) log.debug("onTrackSelected: position={}, mVideoInfo.subtitleTrack={}, mVideoInfo.nbSubtitles={}, subtitleTrackToPosition={}", position, mVideoInfo.subtitleTrack, mVideoInfo.nbSubtitles, subtitleTrackToPosition(mVideoInfo.subtitleTrack, mVideoInfo.nbSubtitles));
++            if (position < 0 || position >= mSubtitleInfoController.getTrackCount()) return false;
++            if (position == subtitleTrackToPosition(mVideoInfo.subtitleTrack, mVideoInfo.nbSubtitles)) {
++                rememberManualSubtitleTrack(positionToSubtitleTrack(position, mVideoInfo.nbSubtitles));
++                return true;
++            }
+             if (position != subtitleTrackToPosition(mVideoInfo.subtitleTrack, mVideoInfo.nbSubtitles)) {
+                 if (log.isDebugEnabled()) log.debug("onTrackSelected: position={}, old mVideoInfo.subtitleTrack={}", position, mVideoInfo.subtitleTrack);
+                 ret = mPlayer.setSubtitleTrack(positionToPlayerSubtitleTrack(position, mVideoInfo.nbSubtitles));
+                 if (ret) {
+                     mVideoInfo.subtitleTrack = positionToSubtitleTrack(position, mVideoInfo.nbSubtitles);
++                    rememberManualSubtitleTrack(mVideoInfo.subtitleTrack);
+                     if (log.isDebugEnabled()) log.debug("onTrackSelected: -> mVideoInfo.subtitleTrack={}", mVideoInfo.subtitleTrack);
+                     // Extract and save the subtitle language for track validation on re-enumeration
+                     if (mVideoInfo.subtitleTrack >= 0) {
+@@ -4372,14 +4382,36 @@ public class PlayerActivity extends AppCompatActivity implements PlayerControlle
+                 case SUBTITLE_MENU_DOWNLOAD:
+                     downloadSubtitles();
+                     break;
++                case SUBTITLE_MENU_LOCAL:
++                    chooseSubtitles();
++                    break;
+             }
+         }
+         return true;
+     }
+ 
+-    private void onSubtitleResult() {
+-        if (log.isDebugEnabled()) log.debug("Get result from SubtitlesDownloaderActivity/SubtitlesWizardActivity");
+-        mPlayer.checkSubtitles();
++    private void rememberManualSubtitleTrack(int track) {
++        PlayerService service = PlayerService.sPlayerService;
++        if (service != null && mPlayer != null) service.rememberManualSubtitleTrack(mPlayer.getVideoMetadata(), track);
++    }
++
++    private void onSubtitleResult(Intent result) {
++        PlayerService service = PlayerService.sPlayerService;
++        if (result != null && service != null) {
++            String video = result.getStringExtra(SubtitlesWizardCommon.EXTRA_ASSOCIATED_VIDEO);
++            if (video != null) service.onLocalSubtitleAssociated(Uri.parse(video),
++                    result.getStringExtra(SubtitlesWizardCommon.EXTRA_ASSOCIATION_GENERATION),
++                    result.getStringExtra(SubtitlesWizardCommon.EXTRA_ASSOCIATED_SUBTITLE_PATH));
++        }
++        if (mPlayer != null) mPlayer.checkSubtitles();
++    }
++
++    private static boolean canChooseSubtitleOnDrive(Uri uri) {
++        if (uri == null || uri.getScheme() == null) return false;
++        String scheme = uri.getScheme();
++        return scheme.equals("file") || scheme.startsWith("smb") || scheme.equals("sshj") || scheme.equals("sftp")
++                || (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N && scheme.equals("content")
++                && android.provider.DocumentsContract.isTreeUri(uri));
+     }
+ 
+     private void downloadSubtitles() {
+@@ -4398,6 +4430,9 @@ public class PlayerActivity extends AppCompatActivity implements PlayerControlle
+ 
+         subIntent.setClass(mContext, SubtitlesWizardActivity.class);
+         subIntent.setData(uri);
++        PlayerService service = PlayerService.sPlayerService;
++        if (service != null) subIntent.putExtra(SubtitlesWizardCommon.EXTRA_ASSOCIATION_GENERATION,
++                service.getSubtitleSelectionGeneration());
+         subtitleLauncher.launch(subIntent);
+     }
+ 
+@@ -4821,6 +4856,10 @@ public class PlayerActivity extends AppCompatActivity implements PlayerControlle
+                 mSubtitleInfoController.addSettings(getText(R.string.menu_player_settings), R.drawable.ic_menu_settings, SUBTITLE_MENU_SETTINGS);
+             }
+             mSubtitleInfoController.addSettings(getText(R.string.get_subtitles_online), R.drawable.ic_menu_subtitles, SUBTITLE_MENU_DOWNLOAD);
++            if (mUri != null && canChooseSubtitleOnDrive(VideoUtils.getFileUriFromMediaLibPath(mUri.toString()))) {
++                mSubtitleInfoController.addSettings(getText(R.string.get_subtitles_on_drive),
++                        R.drawable.ic_menu_subtitles, SUBTITLE_MENU_LOCAL);
++            }
+             if (nbTrack != 0) {
+                 mSubtitleManager.start();
+ 
+diff --git a/src/main/java/com/archos/mediacenter/video/player/PlayerService.java b/src/main/java/com/archos/mediacenter/video/player/PlayerService.java
+index 7a8dd7840db2aa733497a5c9f965ef091e1ed4ae..01660926b4d92a45617b212fc1c8957bd8e4891f 100644
+--- a/src/main/java/com/archos/mediacenter/video/player/PlayerService.java
++++ b/src/main/java/com/archos/mediacenter/video/player/PlayerService.java
+@@ -70,6 +70,7 @@ import com.archos.mediacenter.video.browser.BootupRecommandationService;
+ import com.archos.mediacenter.video.browser.TorrentObserverService;
+ import com.archos.mediacenter.video.browser.adapters.object.Video;
+ import com.archos.mediacenter.video.browser.subtitlesmanager.SubtitleManager;
++import com.archos.mediacenter.utils.MediaUtils;
+ import com.archos.mediacenter.video.leanback.channels.ChannelManager;
+ import com.archos.mediacenter.video.utils.MiscUtils;
+ import com.archos.mediacenter.video.utils.VideoMetadata;
+@@ -204,6 +205,9 @@ public class PlayerService extends Service implements Player.Listener, IndexHelp
+         private boolean startPositionApplied;
+         // Turning off Keep setting affects future videos, not the current preview.
+         private Integer temporarySubtitleDelay;
++        private String manualSubtitleChoice;
++        private String rejectedSubtitleChoice;
++        private String pendingSubtitleAssociation;
+ 
+         private void reset(Uri newUri, String newLaunchGeneration) {
+             uri = newUri;
+@@ -216,6 +220,9 @@ public class PlayerService extends Service implements Player.Listener, IndexHelp
+             completed = false;
+             startPositionApplied = false;
+             temporarySubtitleDelay = null;
++            manualSubtitleChoice = null;
++            rejectedSubtitleChoice = null;
++            pendingSubtitleAssociation = null;
+         }
+ 
+         private void setCandidate(ResumeSource source, int positionMs) {
+@@ -321,6 +328,9 @@ public class PlayerService extends Service implements Player.Listener, IndexHelp
+     private static final String[] GENERIC_TEXT_SUBTITLE_FORMATS = {"srt", "vtt"};
+     private boolean mCallOnDataUriOKWhenVideoInfoIsSet;
+     private boolean mIsPreparingSubs;
++    private int mSubtitlePrefetchGeneration;
++    private Uri mLocalSubtitleSelectionUri;
++    private LocalSubtitleSelection mLocalSubtitleSelection;
+     private String mSubsFavoriteLanguage;
+     private String mAudioTrackFavoriteLanguage;
+     private boolean mPreferOriginalAudioTrack;
+@@ -657,6 +667,9 @@ public class PlayerService extends Service implements Player.Listener, IndexHelp
+         if (!continuingSession) {
+             ++mSourceRequestGeneration;
+             mPlaybackSession.reset(mUri, launchGeneration);
++            ++mSubtitlePrefetchGeneration;
++            if (mSubtitlesReadyLatch != null) mSubtitlesReadyLatch.countDown();
++            mIsPreparingSubs = false;
+         }
+         PlaybackResumePolicy.StartupSource startupSource = PlaybackResumePolicy.chooseStartupSource(
+                 continuingSession, sessionPosition, explicitPosition,
+@@ -914,98 +927,42 @@ public class PlayerService extends Service implements Player.Listener, IndexHelp
+             // Initialize latch to synchronize subtitle enumeration with video playback
+             // This ensures video doesn't start until subtitles are enumerated
+             mSubtitlesReadyLatch = new CountDownLatch(1);
+-
+-            // Only use cache for local files. Remote files (SMB, FTP, etc.) need to be copied locally
+-            // by privatePrefetchSub() before AVOS can access them. Skipping this causes subtitles to disappear.
+-            // See: https://github.com/nova-video-player/aos-AVP/issues/1605
+-            boolean isLocalFile = FileUtils.isLocal(mUri);
+-            List<SubtitleManager.SubtitleFile> cachedFiles = null;
+-            if (isLocalFile) {
+-                // Check if raw subtitle files are cached (within 10 second TTL)
+-                // If cached, we can skip the expensive enumeration
+-                cachedFiles = SubtitleManager.getCachedSubtitleFiles(mUri);
+-            } else {
+-                if (log.isDebugEnabled()) log.debug("prepareSubs: skipping cache for remote file (requires local copy): {}", mUri);
+-            }
+-
+-            if (cachedFiles != null) {
+-                if (log.isDebugEnabled()) log.debug("prepareSubs: cache HIT - found {} cached subtitle files, skipping enumeration", cachedFiles.size());
+-                // Check if AVOS metadata is also cached
+-                VideoMetadata cachedMetadata =
+-                        SubtitleManager.getCachedProcessedMetadata(mUri);
+-                if (cachedMetadata != null) {
+-                    if (log.isDebugEnabled()) log.debug("prepareSubs: cache HIT for both files AND metadata - using cached AVOS metadata, skipping checkSubtitles entirely");
+-                    // Both file list and AVOS result cached - skip all processing
+-                    onSubtitleMetadataUpdated(cachedMetadata, cachedMetadata.getSubtitleTrack(0) != null ? 0 : -1);
+-                    mIsPreparingSubs = false;
+-                    if (mSubtitlesReadyLatch != null) {
+-                        mSubtitlesReadyLatch.countDown();
+-                    }
+-                    return;
+-                } else {
+-                    if (log.isDebugEnabled()) log.debug("prepareSubs: cache HIT for files, but not metadata - will call checkSubtitles");
+-                    // Files cached but not AVOS result - call checkSubtitles to process them
+-                    mIsPreparingSubs = false;
+-                    mPlayer.checkSubtitles();
+-                    if (mSubtitlesReadyLatch != null) {
+-                        mSubtitlesReadyLatch.countDown();
+-                    }
+-                    return;
+-                }
+-            }
++            final CountDownLatch ready = mSubtitlesReadyLatch;
++            final int generation = ++mSubtitlePrefetchGeneration;
+ 
+             if (log.isDebugEnabled()) log.debug("prepareSubs: cache MISS - proceeding with normal enumeration");
+             SubtitleManager subtitleManager =
+                     new SubtitleManager(this, new SubtitleManager.Listener() {
+                         @Override
+                         public void onAbort() {
++                            if (generation != mSubtitlePrefetchGeneration) return;
+                             mIsPreparingSubs = false;
+                             if (log.isDebugEnabled()) log.debug("prepareSubs: onAbort - signaling subtitles ready latch");
+-                            if (mSubtitlesReadyLatch != null) {
+-                                mSubtitlesReadyLatch.countDown();
+-                            }
++                            ready.countDown();
+                         }
+ 
+                         @Override
+                         public void onError(Uri uri, Exception e) {
++                            if (generation != mSubtitlePrefetchGeneration) return;
+                             mIsPreparingSubs = false;
+                             if (log.isDebugEnabled()) log.debug("prepareSubs: onError - signaling subtitles ready latch");
+-                            if (mSubtitlesReadyLatch != null) {
+-                                mSubtitlesReadyLatch.countDown();
+-                            }
++                            ready.countDown();
+                         }
+ 
+                         @Override
+                         public void onSuccess(Uri uri) {
+-                            if (log.isDebugEnabled()) log.debug("prepareSubs: onSuccess request player to check subs if {} = {}", mUri, uri);
++                            if (generation != mSubtitlePrefetchGeneration) return;
+                             mIsPreparingSubs = false;
+-                            if(mUri.equals(uri)) {
+-                                // Check if AVOS metadata is cached (within 10 second TTL)
+-                                VideoMetadata cachedMetadata =
+-                                        SubtitleManager.getCachedProcessedMetadata(mUri);
+-                                if (cachedMetadata != null) {
+-                                    if (log.isDebugEnabled()) log.debug("prepareSubs: onSuccess - using cached AVOS metadata, skipping checkSubtitles");
+-                                    // Use cached metadata directly instead of querying AVOS again
+-                                    onSubtitleMetadataUpdated(cachedMetadata, cachedMetadata.getSubtitleTrack(0) != null ? 0 : -1);
+-                                } else {
+-                                    if (log.isDebugEnabled()) log.debug("prepareSubs: onSuccess - no cached metadata, calling checkSubtitles");
+-                                    mPlayer.checkSubtitles(); // will trigger subs reload
+-                                }
+-                            }
+-                            // Signal that subtitles are ready after checkSubtitles completes
+-                            if (log.isDebugEnabled()) log.debug("prepareSubs: onSuccess - signaling subtitles ready latch");
+-                            if (mSubtitlesReadyLatch != null) {
+-                                mSubtitlesReadyLatch.countDown();
+-                            }
++                            if (Objects.equals(mUri, uri)) mPlayer.checkSubtitles();
++                            ready.countDown();
+                         }
+ 
+                         @Override
+                         public void onNoSubtitlesFound(Uri uri) {
++                            if (generation != mSubtitlePrefetchGeneration) return;
+                             mIsPreparingSubs = false;
+                             if (log.isDebugEnabled()) log.debug("prepareSubs: onNoSubtitlesFound - signaling subtitles ready latch");
+-                            if (mSubtitlesReadyLatch != null) {
+-                                mSubtitlesReadyLatch.countDown();
+-                            }
++                            ready.countDown();
+                         }
+                     });
+             subtitleManager.preFetchHTTPSubtitlesAndPrepareUpnpSubs(mUri, mStreamingUri);
+@@ -2283,6 +2240,59 @@ public class PlayerService extends Service implements Player.Listener, IndexHelp
+         mPlaybackSession.temporarySubtitleDelay = null;
+     }
+ 
++    String getSubtitleSelectionGeneration() {
++        return mPlaybackSession.launchGeneration;
++    }
++
++    void onLocalSubtitleAssociated(Uri video, String generation, String targetPath) {
++        if (targetPath == null || !Objects.equals(mPlaybackSession.launchGeneration, generation)
++                || getLocalSubtitleSelection() == null
++                || !Objects.equals(SubtitleManager.localVideoIdentity(mUri), SubtitleManager.localVideoIdentity(video)))
++            return;
++        mPlaybackSession.pendingSubtitleAssociation = targetPath;
++        SubtitleManager.invalidateCache(mUri);
++    }
++
++    private LocalSubtitleSelection getLocalSubtitleSelection() {
++        if (mPreferences == null || !FileUtils.isLocal(mUri)) return null;
++        if (!Objects.equals(mUri, mLocalSubtitleSelectionUri)) {
++            mLocalSubtitleSelectionUri = mUri;
++            mLocalSubtitleSelection = new LocalSubtitleSelection(mUri, MediaUtils.getSubsDir(this));
++        }
++        return mLocalSubtitleSelection;
++    }
++
++    private boolean isSubtitleCandidate(VideoMetadata.SubtitleTrack track) {
++        LocalSubtitleSelection selection = getLocalSubtitleSelection();
++        return track != null && (selection == null || selection.eligible(track));
++    }
++
++    void rememberManualSubtitleTrack(VideoMetadata metadata, int index) {
++        LocalSubtitleSelection selection = getLocalSubtitleSelection();
++        if (selection == null || metadata == null) return;
++        int count = metadata.getSubtitleTrackNb();
++        if (index < 0 || index > count) return;
++        String identity = index == count ? SubtitleMemoryPolicy.NONE : selection.identities(metadata)[index];
++        if (identity == null) return;
++        mPlaybackSession.pendingSubtitleAssociation = null;
++        mPlaybackSession.rejectedSubtitleChoice = null;
++        mPlaybackSession.manualSubtitleChoice = identity;
++        if (!PrivateMode.isActive()) {
++            SharedPreferences.Editor prefs = mPreferences.edit().putString(selection.videoKey, identity);
++            VideoMetadata.SubtitleTrack track = index < count ? metadata.getSubtitleTrack(index) : null;
++            if (selection.seriesKey != null && track != null && track.isExternal) {
++                String variant = selection.variant(track);
++                prefs.putString(selection.seriesKey, variant != null && !variant.equals("owned:") ? variant : "");
++            }
++            prefs.apply();
++        }
++    }
++
++    private String manualSubtitleChoice(LocalSubtitleSelection selection) {
++        if (mPlaybackSession.manualSubtitleChoice != null) return mPlaybackSession.manualSubtitleChoice;
++        return PrivateMode.isActive() ? null : mPreferences.getString(selection.videoKey, null);
++    }
++
+     @Override
+     public void onSubtitleMetadataUpdated(VideoMetadata vMetadata, int newSubtitleTrack) {
+         // note: if mIsPreparingSubs = true, onSubtitleMetadataUpdated can be called even if in not final state
+@@ -2305,8 +2315,37 @@ public class PlayerService extends Service implements Player.Listener, IndexHelp
+         // selection logic
+         if (nbTrack != 0) {
+             int noneTrack = nbTrack; // here it tracks mVideoInfo.subtitleTrack that are the tracks of the video (not the none from menu)
+-            // Validate saved subtitle language against current track at saved index
+-            if (mVideoInfo.subtitleTrack >= 0 && mVideoInfo.subtitleLanguage != null) {
++            LocalSubtitleSelection local = getLocalSubtitleSelection();
++            int rejectedIndex = local != null && mPlaybackSession.rejectedSubtitleChoice != null
++                    ? SubtitleMemoryPolicy.find(mPlaybackSession.rejectedSubtitleChoice, local.identities(vMetadata)) : -1;
++            if (local != null) {
++                int associated = local.matchingAssociation(vMetadata, mPlaybackSession.pendingSubtitleAssociation);
++                String manual = manualSubtitleChoice(local);
++                int chosen = associated;
++                if (chosen < 0 && manual != null && !manual.equals(mPlaybackSession.rejectedSubtitleChoice))
++                    chosen = SubtitleMemoryPolicy.find(manual, local.identities(vMetadata));
++                // Learning only ranks unique variants among this video's proven sidecars.
++                // A missing explicit choice falls back to the ordinary subtitle preferences.
++                if (chosen < 0 && manual == null && local.seriesKey != null
++                        && !mHideSubtitles && !PrivateMode.isActive()) {
++                    String learned = mPreferences.getString(local.seriesKey, null);
++                    if (learned != null) {
++                        String[] variants = new String[nbTrack];
++                        for (int i = 0; i < nbTrack; i++) {
++                            if (i != rejectedIndex) variants[i] = local.variant(vMetadata.getSubtitleTrack(i));
++                        }
++                        chosen = SubtitleMemoryPolicy.chooseSeriesVariant(learned, variants);
++                    }
++                }
++                // A validated pre-upgrade DB selection remains useful when no new choice wins.
++                // Never reuse that ordinal when a newer explicit identity is missing/rejected.
++                if (chosen >= 0 || manual != null || !hasValidSavedLocalSubtitle(vMetadata, rejectedIndex)) {
++                    mVideoInfo.subtitleTrack = chosen;
++                    mVideoInfo.subtitleLanguage = null;
++                }
++            }
++            // Non-local sources retain their original saved ordinal/language behavior.
++            if (local == null && mVideoInfo.subtitleTrack >= 0 && mVideoInfo.subtitleLanguage != null) {
+                 VideoMetadata.SubtitleTrack trackAtIndex = vMetadata.getSubtitleTrack(mVideoInfo.subtitleTrack);
+                 if (trackAtIndex != null) {
+                     String currentLanguage = null;
+@@ -2332,14 +2371,14 @@ public class PlayerService extends Service implements Player.Listener, IndexHelp
+                 boolean selectedAudioIsOutsideCurrentLocale =
+                         isSelectedAudioTrackOutsideLanguage(vMetadata, currentLocaleLanguage);
+                 Integer defaultExternalTextTrack = mHideSubtitles ? null
+-                        : selectDefaultExternalTextSubtitleTrack(vMetadata);
++                        : selectDefaultExternalTextSubtitleTrack(vMetadata, rejectedIndex);
+                 if (mHideSubtitles) {
+-                    Integer forcedTrack = selectForcedSubtitleTrack(vMetadata);
++                    Integer forcedTrack = selectForcedSubtitleTrack(vMetadata, rejectedIndex);
+                     mVideoInfo.subtitleTrack = Objects.requireNonNullElse(forcedTrack, noneTrack);
+                     if (log.isDebugEnabled()) log.debug("onSubtitleMetadataUpdated: hide regular subtitles -> selected forced track {}", mVideoInfo.subtitleTrack);
+                 } else if (!mShowFullSubsForLocalAudio && selectedAudioIsInCurrentLocale
+                         && ISO639codes.isFavoriteLanguageMatch(mSubsFavoriteLanguage, currentLocaleLanguage)) {
+-                    Integer forcedTrack = selectForcedSubtitleTrack(vMetadata);
++                    Integer forcedTrack = selectForcedSubtitleTrack(vMetadata, rejectedIndex);
+                     mVideoInfo.subtitleTrack = Objects.requireNonNullElse(forcedTrack,
+                             Objects.requireNonNullElse(defaultExternalTextTrack, noneTrack));
+                     if (log.isDebugEnabled()) log.debug("onSubtitleMetadataUpdated: active audio and preferred subtitles match current locale {} -> selected forced or untagged default external track {}", currentLocaleLanguage, mVideoInfo.subtitleTrack);
+@@ -2373,6 +2412,7 @@ public class PlayerService extends Service implements Player.Listener, IndexHelp
+                     Integer englishDefaultMatchTrack = null;
+                     for (int i = 0; i < nbTrack; ++i) { // select default track
+                         VideoMetadata.SubtitleTrack subTrack = vMetadata.getSubtitleTrack(i);
++                        if (i == rejectedIndex || !isSubtitleCandidate(subTrack)) continue;
+                         trackName = subTrack.name;
+                         // select default locale and avoid forced subs
+                         if (subTrack.isExternal) {
+@@ -2454,8 +2494,12 @@ public class PlayerService extends Service implements Player.Listener, IndexHelp
+                             newTrack = Objects.requireNonNullElse(fallbackTextTrack, newSubtitleTrack); // strategy to revert to newSubtitleTrack if lang not found (legacy)
+                             revertTrackName = "newSubtitleTrack";
+                         }
+-                        if (newTrack < nbTrack) {
++                        if (newTrack >= 0 && newTrack < nbTrack) {
+                             VideoMetadata.SubtitleTrack fallbackSubTrack = vMetadata.getSubtitleTrack(newTrack);
++                            if (newTrack == rejectedIndex || !isSubtitleCandidate(fallbackSubTrack)) {
++                                newTrack = noneTrack;
++                                revertTrackName = "noneTrack";
++                            }
+                             boolean fallbackIsForced = allSubtitleTracksAreForced
+                                     ? (fallbackSubTrack != null && (stringContainsForced(fallbackSubTrack.name) || (fallbackSubTrack.isExternal && stringContainsForced(fallbackSubTrack.path))))
+                                     : isForcedSubtitleTrack(fallbackSubTrack);
+@@ -2480,23 +2524,26 @@ public class PlayerService extends Service implements Player.Listener, IndexHelp
+                         mVideoInfo.subtitleTrack = noneTrack;
+                     }
+                 }
+-                // Extract and save the selected track's language for future validation on re-enumeration
+-                if (mVideoInfo.subtitleTrack >= 0 && mVideoInfo.subtitleTrack < nbTrack) {
+-                    VideoMetadata.SubtitleTrack track = vMetadata.getSubtitleTrack(mVideoInfo.subtitleTrack);
+-                    if (track != null) {
+-                        String language = null;
+-                        if (track.isExternal) {
+-                            language = getSubLanguageFromSubPathAndVideoPath(getApplicationContext(), track.path, vMetadata.getFile().getPath());
+-                        } else {
+-                            language = ISO639codes.getLanguageNameForLetterCode(track.language);
++                // Retain upstream non-local behavior, but don't manufacture a legacy
++                // manual identity out of a new local automatic language selection.
++                if (local == null) {
++                    if (mVideoInfo.subtitleTrack >= 0 && mVideoInfo.subtitleTrack < nbTrack) {
++                        VideoMetadata.SubtitleTrack track = vMetadata.getSubtitleTrack(mVideoInfo.subtitleTrack);
++                        if (track != null) {
++                            String language = null;
++                            if (track.isExternal) {
++                                language = getSubLanguageFromSubPathAndVideoPath(getApplicationContext(), track.path, vMetadata.getFile().getPath());
++                            } else {
++                                language = ISO639codes.getLanguageNameForLetterCode(track.language);
++                            }
++                            mVideoInfo.subtitleLanguage = extractLanguageCode(language).toLowerCase(Locale.ROOT);
++                            if (log.isDebugEnabled()) log.debug("onSubtitleMetadataUpdated: auto-selected track {} with language={}", mVideoInfo.subtitleTrack, mVideoInfo.subtitleLanguage);
+                         }
+-                        mVideoInfo.subtitleLanguage = extractLanguageCode(language).toLowerCase(Locale.ROOT);
+-                        if (log.isDebugEnabled()) log.debug("onSubtitleMetadataUpdated: auto-selected track {} with language={}", mVideoInfo.subtitleTrack, mVideoInfo.subtitleLanguage);
++                    } else {
++                        // None track selected or invalid, clear language
++                        mVideoInfo.subtitleLanguage = null;
++                        if (log.isDebugEnabled()) log.debug("onSubtitleMetadataUpdated: none track or invalid selected, clearing language");
+                     }
+-                } else {
+-                    // None track selected or invalid, clear language
+-                    mVideoInfo.subtitleLanguage = null;
+-                    if (log.isDebugEnabled()) log.debug("onSubtitleMetadataUpdated: none track or invalid selected, clearing language");
+                 }
+             }
+             // application logic
+@@ -2504,10 +2551,15 @@ public class PlayerService extends Service implements Player.Listener, IndexHelp
+             if (mVideoInfo.subtitleTrack >= 0 && mVideoInfo.subtitleTrack <= nbTrack) {
+                 if (log.isDebugEnabled()) log.debug("onSubtitleMetadataUpdated: newSubtitleTrack={}, mVideoInfo.subtitleTrack={}", newSubtitleTrack, mVideoInfo.subtitleTrack);
+ 
+-                if (!mPlayer.setSubtitleTrack(mVideoInfo.subtitleTrack)) {
++                int chosen = mVideoInfo.subtitleTrack;
++                if (!mPlayer.setSubtitleTrack(chosen == noneTrack && local != null ? -1 : chosen)) {
+                     if (log.isDebugEnabled()) log.debug("onSubtitleMetadataUpdated: setSubtitleTrack failed, setting none track");
+                     mVideoInfo.subtitleTrack = noneTrack;
+                 } else {
++                    if (local != null && chosen < noneTrack && chosen ==
++                            local.matchingAssociation(vMetadata, mPlaybackSession.pendingSubtitleAssociation)) {
++                        rememberManualSubtitleTrack(vMetadata, chosen);
++                    }
+                     if (log.isDebugEnabled()) log.debug("onSubtitleMetadataUpdated: setSubtitleTrack done to track {}", mVideoInfo.subtitleTrack);
+                 }
+                 int effectiveDelay = getEffectiveSubtitleDelay(mVideoInfo.subtitleDelay);
+@@ -2544,7 +2596,18 @@ public class PlayerService extends Service implements Player.Listener, IndexHelp
+             return;
+         }
+ 
+-        int noneTrack = mPlayer.getVideoMetadata().getSubtitleTrackNb();
++        VideoMetadata metadata = mPlayer.getVideoMetadata();
++        LocalSubtitleSelection local = getLocalSubtitleSelection();
++        if (local != null && metadata != null && track >= 0 && track < metadata.getSubtitleTrackNb()) {
++            String choice = manualSubtitleChoice(local);
++            if (choice != null && !choice.equals(mPlaybackSession.rejectedSubtitleChoice)
++                    && choice.equals(local.identities(metadata)[track])) {
++                mPlaybackSession.rejectedSubtitleChoice = choice;
++                onSubtitleMetadataUpdated(metadata, -1);
++                return;
++            }
++        }
++        int noneTrack = metadata != null ? metadata.getSubtitleTrackNb() : 0;
+         log.error("onSubtitleTrackSelectionCompleted: failed to apply track {}, falling back to none", track);
+         mVideoInfo.subtitleTrack = noneTrack;
+         mVideoInfo.subtitleLanguage = null;
+@@ -2554,6 +2617,19 @@ public class PlayerService extends Service implements Player.Listener, IndexHelp
+         }
+     }
+ 
++    private boolean hasValidSavedLocalSubtitle(VideoMetadata metadata, int rejectedIndex) {
++        int index = mVideoInfo.subtitleTrack;
++        String savedLanguage = mVideoInfo.subtitleLanguage;
++        if (savedLanguage == null || index < 0 || index >= metadata.getSubtitleTrackNb()
++                || index == rejectedIndex) return false;
++        VideoMetadata.SubtitleTrack track = metadata.getSubtitleTrack(index);
++        if (!isSubtitleCandidate(track)) return false;
++        String currentLanguage = track.isExternal
++                ? getSubLanguageFromSubPathAndVideoPath(getApplicationContext(), track.path, metadata.getFile().getPath())
++                : ISO639codes.getLanguageNameForLetterCode(track.language);
++        return savedLanguage.equalsIgnoreCase(extractLanguageCode(currentLanguage));
++    }
++
+     private boolean isSelectedAudioTrackInLanguage(VideoMetadata videoMetadata, String language) {
+         int audioTrackIndex = mVideoInfo.audioTrack;
+         if (audioTrackIndex < 0 || audioTrackIndex >= videoMetadata.getAudioTrackNb()) {
+@@ -2581,10 +2657,10 @@ public class PlayerService extends Service implements Player.Listener, IndexHelp
+      * suffix, but conventionally represents the user's default full subtitle. It is eligible
+      * only when it is not forced; a forced track remains subject to forced-track selection.
+      */
+-    private @Nullable Integer selectDefaultExternalTextSubtitleTrack(VideoMetadata videoMetadata) {
++    private @Nullable Integer selectDefaultExternalTextSubtitleTrack(VideoMetadata videoMetadata, int rejectedIndex) {
+         for (int i = 0; i < videoMetadata.getSubtitleTrackNb(); i++) {
+             VideoMetadata.SubtitleTrack subtitleTrack = videoMetadata.getSubtitleTrack(i);
+-            if (subtitleTrack == null || !subtitleTrack.isExternal
++            if (i == rejectedIndex || !isSubtitleCandidate(subtitleTrack) || !subtitleTrack.isExternal
+                     || isForcedSubtitleTrack(subtitleTrack)) {
+                 continue;
+             }
+@@ -2597,7 +2673,7 @@ public class PlayerService extends Service implements Player.Listener, IndexHelp
+         return null;
+     }
+ 
+-    private @Nullable Integer selectForcedSubtitleTrack(VideoMetadata videoMetadata) {
++    private @Nullable Integer selectForcedSubtitleTrack(VideoMetadata videoMetadata, int rejectedIndex) {
+         int audioTrackIndex = mVideoInfo.audioTrack;
+         if (audioTrackIndex < 0 || audioTrackIndex >= videoMetadata.getAudioTrackNb()) {
+             return null;
+@@ -2613,7 +2689,7 @@ public class PlayerService extends Service implements Player.Listener, IndexHelp
+         Integer unknownLanguageDefaultTrack = null;
+         for (int i = 0; i < videoMetadata.getSubtitleTrackNb(); i++) {
+             VideoMetadata.SubtitleTrack subtitleTrack = videoMetadata.getSubtitleTrack(i);
+-            if (!isForcedSubtitleTrack(subtitleTrack)) {
++            if (i == rejectedIndex || !isSubtitleCandidate(subtitleTrack) || !isForcedSubtitleTrack(subtitleTrack)) {
+                 continue;
+             }
+             boolean isDefault = (subtitleTrack.disposition & VideoUtils.AV_DISPOSITION_DEFAULT) != 0;
+diff --git a/src/main/java/com/archos/mediacenter/video/player/SubtitleMemoryPolicy.java b/src/main/java/com/archos/mediacenter/video/player/SubtitleMemoryPolicy.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..2dbc32be78ab17f698867a3cc744eb5ca2ba7f87
+--- /dev/null
++++ b/src/main/java/com/archos/mediacenter/video/player/SubtitleMemoryPolicy.java
+@@ -0,0 +1,83 @@
++/* SPDX-License-Identifier: Apache-2.0 */
++package com.archos.mediacenter.video.player;
++
++import java.nio.charset.StandardCharsets;
++import java.security.MessageDigest;
++import java.security.NoSuchAlgorithmException;
++
++final class SubtitleMemoryPolicy {
++    static final String NONE = "none";
++
++    private SubtitleMemoryPolicy() {}
++
++    static String videoKey(String identity) {
++        return "player_manual_subtitle_" + hash(identity);
++    }
++
++    static String seriesKey(String parentIdentity, String series) {
++        return "player_subtitle_series_" + hash(parentIdentity, series);
++    }
++
++    static String external(String path, String cacheFingerprint) {
++        return "file:" + hash(path, cacheFingerprint);
++    }
++
++    static String embedded(String name, String language, int kind, int format, int disposition) {
++        return "embedded:" + hash(name, language, Integer.toString(kind), Integer.toString(format),
++                Integer.toString(disposition));
++    }
++
++    static String withOrdinal(String embeddedIdentity, int ordinal) {
++        return embeddedIdentity + ":" + ordinal;
++    }
++
++    /** Returns -1 for absent/ambiguous choices; NONE resolves independently of track count. */
++    static int find(String wanted, String[] available) {
++        if (NONE.equals(wanted)) return available.length;
++        if (wanted == null) return -1;
++        int match = -1;
++        for (int i = 0; i < available.length; i++) {
++            if (wanted.equals(available[i])) {
++                if (match != -1) return -1;
++                match = i;
++            }
++        }
++        return match;
++    }
++
++    /** A single proven file is safe even if its naming/source style changed after an episode. */
++    static int chooseSeriesVariant(String learned, String[] eligible) {
++        if (learned == null) return -1;
++        int exact = learned.isEmpty() ? -1 : find(learned, eligible);
++        if (exact >= 0) return exact;
++        int unique = -1;
++        for (int i = 0; i < eligible.length; i++) {
++            if (eligible[i] == null) continue;
++            if (unique >= 0) return -1;
++            unique = i;
++        }
++        return unique;
++    }
++
++    private static String hash(String... values) {
++        try {
++            MessageDigest digest = MessageDigest.getInstance("SHA-256");
++            for (String value : values) {
++                if (value != null) digest.update(value.getBytes(StandardCharsets.UTF_8));
++                digest.update((byte) 0);
++            }
++            return toHex(digest.digest());
++        } catch (NoSuchAlgorithmException e) {
++            throw new AssertionError("Android requires SHA-256", e);
++        }
++    }
++
++    static String toHex(byte[] bytes) {
++        StringBuilder result = new StringBuilder(bytes.length * 2);
++        final String digits = "0123456789abcdef";
++        for (byte b : bytes) {
++            result.append(digits.charAt((b >>> 4) & 15)).append(digits.charAt(b & 15));
++        }
++        return result.toString();
++    }
++}
+diff --git a/src/test/java/com/archos/mediacenter/video/player/SubtitleTrackSelectionPolicyTest.java b/src/test/java/com/archos/mediacenter/video/player/SubtitleTrackSelectionPolicyTest.java
+index 50985529dbb36a8c0ae8f1cb203f5f73b124051a..d52f35f7201b033d3d9eb614ab1aba569d7c0f33 100644
+--- a/src/test/java/com/archos/mediacenter/video/player/SubtitleTrackSelectionPolicyTest.java
++++ b/src/test/java/com/archos/mediacenter/video/player/SubtitleTrackSelectionPolicyTest.java
+@@ -53,6 +53,8 @@ public class SubtitleTrackSelectionPolicyTest {
+     public void setUp() throws Exception {
+         mOriginalLocale = Locale.getDefault();
+         mService = Robolectric.buildService(PlayerService.class).get();
++        setPrivateField(mService, "mPreferences",
++                androidx.preference.PreferenceManager.getDefaultSharedPreferences(mService));
+         mMockPlayer = Mockito.mock(Player.class);
+         Mockito.when(mMockPlayer.setAudioTrack(Mockito.anyInt())).thenReturn(true);
+         Mockito.when(mMockPlayer.setSubtitleTrack(Mockito.anyInt())).thenReturn(true);
+@@ -416,6 +418,99 @@ public class SubtitleTrackSelectionPolicyTest {
+         assertEquals("Traditional Chinese variant must be selected even when all tracks have forced disposition", 2, sub);
+     }
+ 
++    @Test
++    public void testManualExternalRestoresExactVariantAcrossTrackReorder() throws Exception {
++        setPrivateField(mService, "mUri", Uri.parse("file:///shows/Show.S01E01.mkv"));
++        AudioFixture audio = new AudioFixture("English", "eng", 1, true);
++        SubFixture hans = new SubFixture("SRT", "", "/shows/Show.S01E01.zh-Hans.srt", 0, false, 0);
++        SubFixture hant = new SubFixture("SRT", "", "/shows/Show.S01E01.zh-Hant.srt", 0, false, 0);
++        VideoMetadata original = createMetadata(audio, hans, hant);
++        mService.rememberManualSubtitleTrack(original, 1);
++        VideoMetadata reordered = createMetadata(audio, hant, hans);
++        assertEquals(0, runSubtitleSelection(reordered, 0, "en", "zh-cn", false));
++    }
++
++    @Test
++    public void testMissingManualExternalReturnsToPreferredBuiltIn() throws Exception {
++        setPrivateField(mService, "mUri", Uri.parse("file:///shows/Show.S01E01.mkv"));
++        AudioFixture audio = new AudioFixture("English", "eng", 1, true);
++        VideoMetadata original = createMetadata(audio,
++                new SubFixture("SRT", "", "/shows/Show.S01E01.zh-Hant.srt", 0, false, 0));
++        mService.rememberManualSubtitleTrack(original, 0);
++        VideoMetadata remaining = createMetadata(audio,
++                new SubFixture("English", "eng", "", 0, false, 0),
++                new SubFixture("French", "fra", "", 0, false, 0));
++        VideoDbInfo stale = new VideoDbInfo();
++        stale.audioTrack = 0;
++        stale.subtitleTrack = 0;
++        stale.subtitleLanguage = "en";
++        assertEquals(1, runSubtitleSelectionWithDbInfo(remaining, stale, "en", "fr", false));
++    }
++
++    @Test
++    public void testLegacyForeignEpisodeSlotCannotOverrideSafeFallback() throws Exception {
++        setPrivateField(mService, "mUri", Uri.parse("file:///shows/Show.S01E01.mkv"));
++        AudioFixture audio = new AudioFixture("English", "eng", 1, true);
++        VideoMetadata metadata = createMetadata(audio,
++                new SubFixture("SRT", "", "/shows/Show.S01E02.fr.srt", 0, false, 0),
++                new SubFixture("French", "fra", "", 0, false, 0));
++        VideoDbInfo stale = new VideoDbInfo();
++        stale.audioTrack = 0;
++        stale.subtitleTrack = 0;
++        stale.subtitleLanguage = "fr";
++        assertEquals(1, runSubtitleSelectionWithDbInfo(metadata, stale, "en", "fr", false));
++    }
++
++    @Test
++    public void testLocalAutoChoiceDoesNotBecomeSavedManualChoice() throws Exception {
++        AudioFixture audio = new AudioFixture("English", "eng", 1, true);
++        VideoMetadata metadata = createMetadata(audio,
++                new SubFixture("English", "eng", "", 0, false, 0),
++                new SubFixture("French", "fra", "", 0, false, 0));
++        VideoDbInfo videoInfo = new VideoDbInfo();
++        videoInfo.audioTrack = 0;
++        videoInfo.subtitleTrack = -1;
++        assertEquals(1, runSubtitleSelectionWithDbInfo(metadata, videoInfo, "de", "fr", false));
++        org.junit.Assert.assertNull(videoInfo.subtitleLanguage);
++        assertEquals(0, runSubtitleSelectionWithDbInfo(metadata, videoInfo, "de", "en", false));
++    }
++
++    @Test
++    public void testManualNoneRemainsNoneWhenTrackCountChanges() throws Exception {
++        AudioFixture audio = new AudioFixture("English", "eng", 1, true);
++        SubFixture spanish = new SubFixture("Spanish", "spa", "", 0, false, 0);
++        mService.rememberManualSubtitleTrack(createMetadata(audio, spanish), 1);
++        VideoMetadata more = createMetadata(audio, spanish,
++                new SubFixture("French", "fra", "", 0, false, 0));
++        assertEquals(-1, runSubtitleSelection(more, 0, "en", "fr", false));
++    }
++
++    @Test
++    public void testSeriesVariantSelectsOwnEpisodeNotEarlierOrPrefixCollision() throws Exception {
++        setPrivateField(mService, "mUri", Uri.parse("file:///shows/Show.S01E01.mkv"));
++        AudioFixture audio = new AudioFixture("English", "eng", 1, true);
++        mService.rememberManualSubtitleTrack(createMetadata(audio,
++                new SubFixture("SRT", "", "/shows/Show.S01E01.zh-Hant.srt", 0, false, 0)), 0);
++        Field sessionField = PlayerService.class.getDeclaredField("mPlaybackSession");
++        sessionField.setAccessible(true);
++        Object session = sessionField.get(mService);
++        Method reset = session.getClass().getDeclaredMethod("reset", Uri.class, String.class);
++        reset.setAccessible(true);
++        Uri next = Uri.parse("file:///shows/Show.S01E02.mkv");
++        reset.invoke(session, next, "next-episode");
++        setPrivateField(mService, "mUri", next);
++        VideoMetadata episodeTwo = createMetadata(audio,
++                new SubFixture("SRT", "", "/shows/Show.S01E01.zh-Hant.srt", 0, false, 0),
++                new SubFixture("SRT", "", "/shows/Show.S01E020.zh-Hant.srt", 0, false, 0),
++                new SubFixture("SRT", "", "/shows/Show.S01E02.zh-Hans.srt", 0, false, 0),
++                new SubFixture("SRT", "", "/shows/Show.S01E02.zh-Hant.srt", 0, false, 0));
++        assertEquals(3, runSubtitleSelection(episodeTwo, 0, "en", "zh-cn", false));
++        VideoMetadata oneOwnSidecar = createMetadata(audio,
++                new SubFixture("SRT", "", "/shows/Show.S01E01.zh-Hant.srt", 0, false, 0),
++                new SubFixture("SRT", "", "/shows/Show.S01E02.zh.srt", 0, false, 0));
++        assertEquals(1, runSubtitleSelection(oneOwnSidecar, 0, "en", "fr", false));
++    }
++
+     // -------------------------------------------------------------------------
+     // Helpers
+     // -------------------------------------------------------------------------
+diff --git a/test/SubtitleMemoryPolicyTest.java b/test/SubtitleMemoryPolicyTest.java
+new file mode 100644
+index 0000000000000000000000000000000000000000..85061ff692b206539f9640429e40d3c60448b6b3
+--- /dev/null
++++ b/test/SubtitleMemoryPolicyTest.java
+@@ -0,0 +1,70 @@
++/* SPDX-License-Identifier: Apache-2.0 */
++package com.archos.mediacenter.video.player;
++
++import com.archos.mediacenter.video.browser.subtitlesmanager.LocalSubtitleMatch;
++
++public final class SubtitleMemoryPolicyTest {
++    public static void main(String[] args) {
++        check(LocalSubtitleMatch.matches("Show.S01E01.mkv", "Show.S01E01.zh-Hant.ass"));
++        check(!LocalSubtitleMatch.matches("Show.S01E01.mkv", "Show.S01E010.en.srt"));
++        check(!LocalSubtitleMatch.matches("Show.S01E01.mkv", "Show.S01E02.en.srt"));
++        check(!LocalSubtitleMatch.matches("Show.S01E01.mkv", "Show.S01E01E02.en.srt"));
++        check(!LocalSubtitleMatch.matches("Show.S01E01.mkv", "Show.S02E01.srt"));
++        check(LocalSubtitleMatch.matches("Show S01E01 - Title.mkv", "Show.S01E01.zh-Hans.srt"));
++        check(LocalSubtitleMatch.matches("Show.S01E01.mkv", "Show.1x01.en.srt"));
++        check(!LocalSubtitleMatch.matches("Show.S01E01.mkv", "Other.S01E01.srt"));
++        check(!LocalSubtitleMatch.matches("Show.S01E01.mkv", "en.srt"));
++        check(LocalSubtitleMatch.matches("Film.mkv", "Film.2.srt"));
++        check(!LocalSubtitleMatch.matches("Film.mkv", "Film.Part2.srt"));
++        check(LocalSubtitleMatch.generic("zh-Hant.srt"));
++        check(!LocalSubtitleMatch.generic("Other.Show.S01E01.srt"));
++        check(LocalSubtitleMatch.variant("Show.S01E01.mkv", "Show.S01E01.zh-Hant.ass")
++                .equals(LocalSubtitleMatch.variant("Show.S01E02.mkv", "Show.S01E02.zh-Hant.ass")));
++        check(!LocalSubtitleMatch.variant("Show.S01E02.mkv", "Show.S01E02.zh-Hans.ass")
++                .equals(LocalSubtitleMatch.variant("Show.S01E01.mkv", "Show.S01E01.zh-Hant.ass")));
++        check(LocalSubtitleMatch.variant("Show.S01E02.mkv", "Show.S01E01.zh-Hant.ass") == null);
++        check(LocalSubtitleMatch.series("Show.S01E01.mkv").equals(LocalSubtitleMatch.series("Show.S01E02.mkv")));
++        check(!LocalSubtitleMatch.series("Show.S01E01.mkv").equals(LocalSubtitleMatch.series("Other.Show.S01E02.mkv")));
++        check(!LocalSubtitleMatch.matches("AB C.S01E01.mkv", "A BC.S01E01.zh.srt"));
++        check(LocalSubtitleMatch.dedicatedDirectory("Show.S01E01.mkv", "Show.S01E01"));
++        check(!LocalSubtitleMatch.dedicatedDirectory("Show.S01E01.mkv", "Show.S01E010"));
++        String video = "Show.S01E01.mkv";
++        String owned = LocalSubtitleMatch.cacheName(video, "/one/" + video, "/one/Subs/Show.S01E01.en.idx", "en.idx");
++        String pair = LocalSubtitleMatch.cacheName(video, "/one/" + video, "/one/Subs/Show.S01E01.en.sub", "en.sub");
++        check(LocalSubtitleMatch.stem(owned).equals(LocalSubtitleMatch.stem(pair)));
++        check("en.idx".equals(LocalSubtitleMatch.cachedVariant(video, "/one/" + video, owned)));
++        check(LocalSubtitleMatch.cachedVariant(video, "/two/" + video, owned) == null);
++        String manual = LocalSubtitleMatch.manualCacheName(video, "/one/" + video, "/one/Subs/unique.srt", "manual.srt");
++        check("manual.srt".equals(LocalSubtitleMatch.cachedVariant(video, "/one/" + video, manual)));
++        check(LocalSubtitleMatch.cachedVariant(video, "/two/" + video, manual) == null);
++        String ext = SubtitleMemoryPolicy.external("/some/Show.S01E02.zh-Hans.ass", "");
++        String extOther = SubtitleMemoryPolicy.external("/some/Show.S01E02.zh-Hant.ass", "");
++        check(SubtitleMemoryPolicy.find(ext, new String[]{extOther, ext}) == 1);
++        check(SubtitleMemoryPolicy.find(ext, new String[]{extOther}) == -1);
++        check(SubtitleMemoryPolicy.find(SubtitleMemoryPolicy.NONE, new String[]{ext}) == 1);
++        check(SubtitleMemoryPolicy.find(null, new String[]{ext}) == -1);
++        check(SubtitleMemoryPolicy.find(ext, new String[]{ext, ext}) == -1);
++        check(!SubtitleMemoryPolicy.external("/same.srt","bytes A")
++                .equals(SubtitleMemoryPolicy.external("/same.srt","bytes B")));
++        check(!SubtitleMemoryPolicy.videoKey("/a/Show.S01E01.mkv")
++                .equals(SubtitleMemoryPolicy.videoKey("/b/Show.S01E01.mkv")));
++        String embedded = SubtitleMemoryPolicy.embedded("English", "eng", 1, 2, 0);
++        check(SubtitleMemoryPolicy.find(SubtitleMemoryPolicy.withOrdinal(embedded, 1),
++                new String[]{extOther, SubtitleMemoryPolicy.withOrdinal(embedded, 0),
++                        SubtitleMemoryPolicy.withOrdinal(embedded, 1)}) == 2);
++        check(SubtitleMemoryPolicy.chooseSeriesVariant("cache:zh-hant.ass", new String[]{null, "direct:zh.srt"}) == 1);
++        check(SubtitleMemoryPolicy.chooseSeriesVariant("", new String[]{null, "direct:zh.srt"}) == 1);
++        check(SubtitleMemoryPolicy.chooseSeriesVariant("direct:zh-hant.ass",
++                new String[]{"direct:zh-hans.ass", "direct:zh-hant.ass"}) == 1);
++        check(SubtitleMemoryPolicy.chooseSeriesVariant("cache:zh-hant.ass",
++                new String[]{"direct:zh-hans.ass", "direct:zh-hant.ass"}) == -1);
++        check(SubtitleMemoryPolicy.chooseSeriesVariant("direct:zh-hant.ass",
++                new String[]{"direct:zh-hant.ass", "direct:zh-hant.ass"}) == -1);
++        check(SubtitleMemoryPolicy.chooseSeriesVariant(null, new String[]{"direct:zh.srt"}) == -1);
++        System.out.println("Exact subtitle choice, missing/None fallback, series matching and variant safety passed");
++    }
++
++    private static void check(boolean condition) {
++        if (!condition) throw new AssertionError("subtitle policy assertion failed");
++    }
++}
