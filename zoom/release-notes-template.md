@@ -1,9 +1,6 @@
-## NOVA Zoom 6.6.5
-Based on the official upstream v6.6.5 release. Select the APK that matches your Android TV: `armeabi-v7a` is 32-bit and `arm64-v8a` is 64-bit.
+## Android 9 电视手动缩放修复
 
-- Reopening a video restores its manually chosen subtitle when still available; otherwise NOVA's existing preferred-language rules apply.
-- During episode playback, a matching local sidecar belongs to the current episode. NOVA doesn't reuse the previous episode's subtitle file.
-- Previous features are retained: 1-percentage-point manual zoom and the “Keep this setting” switch for subtitle delay.
-- Same app ID and signing certificate for an in-place upgrade. Official NOVA remains separate.
-
-已有 NOVA Zoom 可直接覆盖安装。每集只匹配自己的字幕，找不到时按原有字幕设置选择。
+- 保留最新 v6.6.5 自定义版的字幕选择与延迟记忆、剧集本地字幕匹配、1% 步进和缩放倍率记忆。
+- Android 9 电视播放普通 2D SDR 视频时，手动缩放由播放器直接对视频纹理做居中等比放大，而不是只调整视频控件的尺寸。画面超出边缘时居中裁切。
+- 其他系统、HDR 和 3D 继续使用原有输出。兼容输出初始化失败时，播放器会尝试恢复默认输出；这不代表所有电视固件或 HDR 片源都已验过。
+- 32 位与 64 位 APK 使用原应用 ID 和签名，可覆盖现有 NOVA Zoom，不需卸载。

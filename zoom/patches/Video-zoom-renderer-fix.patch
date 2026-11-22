@@ -1,0 +1,684 @@
+diff --git a/res/layout/player.xml b/res/layout/player.xml
+index 67cddd2..eb206b4 100644
+--- a/res/layout/player.xml
++++ b/res/layout/player.xml
+@@ -33,6 +33,16 @@
+                 android:layout_width="fill_parent"
+                 android:layout_height="fill_parent"
+                 android:layout_gravity="center" />
++        <View android:id="@+id/manual_zoom_backdrop"
++                android:layout_width="match_parent"
++                android:layout_height="match_parent"
++                android:background="@android:color/black"
++                android:visibility="gone" />
++        <TextureView android:id="@+id/manual_zoom_texture"
++                android:layout_width="match_parent"
++                android:layout_height="match_parent"
++                android:layout_gravity="center"
++                android:visibility="gone" />
+     </FrameLayout>
+ 
+     <FrameLayout
+diff --git a/src/main/java/com/archos/mediacenter/video/player/LegacyTvManualZoom.java b/src/main/java/com/archos/mediacenter/video/player/LegacyTvManualZoom.java
+new file mode 100644
+index 0000000..2b196d8
+--- /dev/null
++++ b/src/main/java/com/archos/mediacenter/video/player/LegacyTvManualZoom.java
+@@ -0,0 +1,45 @@
++/* SPDX-License-Identifier: Apache-2.0 */
++package com.archos.mediacenter.video.player;
++
++import java.util.Locale;
++
++/** A bounded 2D TextureView compositor for the affected Android TV generation. */
++final class LegacyTvManualZoom {
++    private LegacyTvManualZoom() {}
++
++    static boolean useTexture(int sdk, boolean television, boolean normalOutput,
++            boolean manualActive, boolean safeSdr, boolean outputRejected) {
++        return sdk == 28 && television && normalOutput && manualActive && safeSdr && !outputRejected;
++    }
++
++    static boolean isSafeSdr(int transfer, String format, int stereoMode) {
++        if (stereoMode != 0 || format == null || format.isEmpty()) return false;
++        String codec = format.toLowerCase(Locale.ROOT);
++        if (codec.contains("dolby") || codec.contains("dovi") || codec.contains("dvhe")
++                || codec.contains("dvh1") || codec.contains("dvav")) return false;
++        return switch (transfer) {
++            // AVCOL_TRC: BT.709, gamma 2.2/2.8, SMPTE 170/240, sRGB, BT.2020 SDR.
++            case 1, 4, 5, 6, 7, 13, 14, 15 -> true;
++            // Untagged AVC is commonly SDR. Unknown HEVC/VP9/AV1 stay on SurfaceView.
++            case 0, 2 -> codec.contains("h.264") || codec.contains("h264") || codec.contains("avc");
++            default -> false; // Includes PQ, HLG and other unverified transfer curves.
++        };
++    }
++
++    static Transform transform(int viewportWidth, int viewportHeight, int pictureWidth, int pictureHeight) {
++        if (viewportWidth <= 0 || viewportHeight <= 0 || pictureWidth <= 0 || pictureHeight <= 0) return null;
++        return new Transform(pictureWidth / (float) viewportWidth, pictureHeight / (float) viewportHeight,
++                viewportWidth / 2f, viewportHeight / 2f);
++    }
++
++    static final class Transform {
++        final float scaleX, scaleY, pivotX, pivotY;
++
++        Transform(float scaleX, float scaleY, float pivotX, float pivotY) {
++            this.scaleX = scaleX;
++            this.scaleY = scaleY;
++            this.pivotX = pivotX;
++            this.pivotY = pivotY;
++        }
++    }
++}
+diff --git a/src/main/java/com/archos/mediacenter/video/player/Player.java b/src/main/java/com/archos/mediacenter/video/player/Player.java
+index 3e3c387..d9664ba 100644
+--- a/src/main/java/com/archos/mediacenter/video/player/Player.java
++++ b/src/main/java/com/archos/mediacenter/video/player/Player.java
+@@ -145,6 +145,10 @@ public class Player implements IPlayerControl,
+     private boolean mHasAudio;
+     private boolean mPlaybackEnding;
+     private SurfaceTexture mDisplayTexture;
++    private boolean mDirectZoomAttached;
++    private boolean mDirectZoomRejected;
++    private boolean mDirectZoomSdr;
++    private boolean mAllowDirectTvZoom = true;
+     private int mFocusEpoch;
+     private AudioManager.OnAudioFocusChangeListener mFocusListener;
+     private boolean mFocusGranted;
+@@ -447,6 +451,7 @@ public class Player implements IPlayerControl,
+         mSurfaceHolder = null;
+         mDisplayTexture = null;
+         mVideoTexture = null;
++        mDirectZoomAttached = false;
+         mSurfaceController = surfaceController;
+         if (mSurfaceController != null) {
+             mSurfaceController.setTextureCallback(this);
+@@ -460,11 +465,45 @@ public class Player implements IPlayerControl,
+         int target = mTargetState;
+         saveUri();
+         suspendForSurface();
+-        mSurfaceController.setGLSupportEnabled(enable);
++        clearDirectZoomProducer();
+         restoreUri(false); // the new surface callback performs the reopen
+         mTargetState = target;
++        mSurfaceController.setGLSupportEnabled(enable);
+     }
+-    
++
++    void allowDirectTvZoom(boolean allow) {
++        mAllowDirectTvZoom = allow;
++        updateManualZoomOutput();
++    }
++
++    void updateManualZoomOutput() {
++        if (mSurfaceController == null || mPlaybackEnding || mUri == null) return;
++        boolean current = mSurfaceController.isDirectZoomOutput();
++        // While reopening the same producer, a temporary metadata reset must not
++        // switch the decoder back. A manual exit can still switch immediately.
++        if (mAllowDirectTvZoom && !mDirectZoomRejected && mSurfaceController.isManualZoomActive()
++                && !mMetadataReady) return;
++        boolean want = mAllowDirectTvZoom
++                && mSurfaceController.canUseDirectZoomOutput(mDirectZoomSdr, mDirectZoomRejected);
++        if (current == want) return;
++        int target = mTargetState;
++        saveUri();
++        suspendForSurface();
++        mSurfaceHolder = null;
++        clearDirectZoomProducer();
++        restoreUri(false);
++        mTargetState = target;
++        mSurfaceController.setDirectZoomOutput(want);
++    }
++
++    private void clearDirectZoomProducer() {
++        if (!mDirectZoomAttached) return;
++        mDirectZoomAttached = false;
++        mDisplayTexture = null;
++        mVideoTexture = null;
++        mUISurface = null;
++    }
++
+     public int getEffectType() {
+         if (mEffectRenderer != null)
+             return mEffectRenderer.getEffectType();
+@@ -479,13 +518,14 @@ public class Player implements IPlayerControl,
+     
+     public void setEffect(int type, int mode) {
+         boolean needToSupportGLEffect = VideoEffect.openGLRequested(type);
+-        if (needToSupportGLEffect ^ mSurfaceController.supportOpenGLVideoEffect()) setGLSupportEnabled(needToSupportGLEffect);
++        if (needToSupportGLEffect != mSurfaceController.usesGlEffectOutput()) setGLSupportEnabled(needToSupportGLEffect);
+         if (mEffectRenderer != null) {
+             mEffectRenderer.setEffectType(type);
+             mEffectRenderer.setEffectMode(mode);
+         }
+         mSurfaceController.setEffectType(type);
+         mSurfaceController.setEffectMode(mode);
++        updateManualZoomOutput();
+     }
+ 
+     public int getUIMode() {
+@@ -497,6 +537,13 @@ public class Player implements IPlayerControl,
+         if (mPlaybackEnding) return; // a delayed service/source callback must not revive this player
+         stopPlayback();
+         reset();
++        // A new file's HDR/stereo metadata must be read before reusing a 2D texture.
++        mDirectZoomRejected = false;
++        mDirectZoomSdr = false;
++        if (mSurfaceController != null && mSurfaceController.isDirectZoomOutput()) {
++            clearDirectZoomProducer();
++            mSurfaceController.setDirectZoomOutput(false);
++        }
+         mMetadataReady = false;
+         mHasAudio = false;
+         mUri = uri;
+@@ -809,6 +856,35 @@ public class Player implements IPlayerControl,
+     public boolean isTorrent(){
+         return mIsTorrent;
+     }
++    void onDirectZoomTextureAvailable(SurfaceTexture surface, int width, int height) {
++        if (mDirectZoomAttached && surface == mDisplayTexture) return;
++        if (mSurfaceHolder != null) {
++            suspendForSurface();
++            mSurfaceHolder = null;
++        }
++        if (mDisplayTexture != null) onSurfaceTextureDestroyed(mDisplayTexture);
++        mDirectZoomAttached = true;
++        mDisplayTexture = surface;
++        mVideoTexture = surface; // native AVOS/MediaCodec producer, no intervening GL effect
++        mSurfaceWidth = width;
++        mSurfaceHeight = height;
++        openVideo();
++    }
++
++    void onDirectZoomTextureSizeChanged(SurfaceTexture surface, int width, int height) {
++        if (!mDirectZoomAttached || mDisplayTexture != surface) return;
++        mSurfaceWidth = width;
++        mSurfaceHeight = height;
++    }
++
++    boolean onDirectZoomTextureDestroyed(SurfaceTexture surface) {
++        if (mDirectZoomAttached && mDisplayTexture == surface) {
++            suspendForSurface();
++            clearDirectZoomProducer();
++        }
++        return true; // TextureView retains ownership and releases it after producer teardown.
++    }
++
+     /* TextureView.SurfaceTextureListener */
+     public void onSurfaceTextureUpdated(SurfaceTexture surface) {
+         if (log.isDebugEnabled()) log.debug("CONFIG onSurfaceTextureUpdated");
+@@ -823,6 +899,7 @@ public class Player implements IPlayerControl,
+ 
+     public boolean onSurfaceTextureDestroyed(SurfaceTexture surface) {
+         if (surface != mDisplayTexture) return true;
++        if (mDirectZoomAttached) return onDirectZoomTextureDestroyed(surface);
+         suspendForSurface();
+         mDisplayTexture = null;
+         mVideoTexture = null;
+@@ -886,6 +963,7 @@ public class Player implements IPlayerControl,
+     public void surfaceCreated(SurfaceHolder holder)
+     {
+         if (log.isDebugEnabled()) log.debug("CONFIG surfaceCreated");
++        if (mSurfaceController != null && !mSurfaceController.isSelectedSurfaceHolder(holder)) return;
+         if (holder == mSurfaceHolder && mMediaPlayer != null) return;
+         if (mDisplayTexture != null) onSurfaceTextureDestroyed(mDisplayTexture);
+         mSurfaceHolder = holder;
+@@ -1285,6 +1363,19 @@ public class Player implements IPlayerControl,
+                         Toast.LENGTH_LONG).show();
+             }
+             mVideoMetadata.setData(data);
++            VideoMetadata.VideoTrack video = mVideoMetadata.getVideoTrack();
++            if (video != null && video.format != null && !video.format.isEmpty()) {
++                // Subtitle/audio-only metadata updates reset VideoMetadata's track
++                // list. Keep the last classification until new video data arrives.
++                mDirectZoomSdr = LegacyTvManualZoom.isSafeSdr(video.colorTrc, video.format, video.s3dMode);
++            }
++            if (mSurfaceController != null && mSurfaceController.isManualZoomActive()
++                    && data.has(IMediaPlayer.METADATA_KEY_NB_VIDEO_TRACK)) {
++                // Do not close the producer in the middle of its metadata callback.
++                mHandler.post(() -> {
++                    if (mp == mMediaPlayer) updateManualZoomOutput();
++                });
++            }
+ 
+             if (mPlayerListener != null) {
+                 if (data.has(IMediaPlayer.METADATA_KEY_NB_VIDEO_TRACK))
+@@ -1464,6 +1555,11 @@ public class Player implements IPlayerControl,
+         mSurfaceController.setVideoSize(mVideoWidth, mVideoHeight, mVideoAspect);
+         if (mEffectRenderer != null)
+                 mEffectRenderer.setVideoSize(mVideoWidth, mVideoHeight, mVideoAspect);
++        if (mMetadataReady && mSurfaceController.isManualZoomActive()) {
++            mHandler.post(() -> {
++                if (mp == mMediaPlayer) updateManualZoomOutput();
++            });
++        }
+     }
+ 
+     public void onVideoAspectChanged(IMediaPlayer mp, double aspect) {
+@@ -1544,6 +1640,15 @@ public class Player implements IPlayerControl,
+ 
+     public boolean onError(IMediaPlayer mp, int errorCode, int errorQualCode, String msg) {
+         if (mp != mMediaPlayer) return true;
++        if (mSurfaceController != null && mSurfaceController.isDirectZoomOutput()
++                && !mDirectZoomRejected && !mPlaybackEnding && mUri != null) {
++            mDirectZoomRejected = true;
++            log.warn("Manual zoom compatibility output failed; retrying the default video surface");
++            mHandler.post(() -> {
++                if (mp == mMediaPlayer) updateManualZoomOutput();
++            });
++            return true;
++        }
+         log.warn("onError: Error: {},{}", errorCode, errorQualCode);
+         mCurrentState = STATE_ERROR;
+         mTargetState = STATE_ERROR;
+diff --git a/src/main/java/com/archos/mediacenter/video/player/PlayerActivity.java b/src/main/java/com/archos/mediacenter/video/player/PlayerActivity.java
+index 6432e4b..afa61b5 100644
+--- a/src/main/java/com/archos/mediacenter/video/player/PlayerActivity.java
++++ b/src/main/java/com/archos/mediacenter/video/player/PlayerActivity.java
+@@ -1171,6 +1171,8 @@ public class PlayerActivity extends AppCompatActivity implements PlayerControlle
+         if(isInPict)
+             mWasInPictureInPicture = true;
+         adjustSkipButtonForPiP(isInPict);
++        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P && mPlayer != null)
++            mPlayer.allowDirectTvZoom(!isInPict && !isInMultiWindowMode());
+     }
+ 
+     @Override
+@@ -2499,6 +2501,7 @@ public class PlayerActivity extends AppCompatActivity implements PlayerControlle
+ 
+     private void applyManualZoom(int percent) {
+         mSurfaceController.setManualZoom(true, percent);
++        if (mPlayer != null) mPlayer.updateManualZoomOutput();
+         mPreferences.edit()
+                 .putBoolean(KEY_PLAYER_MANUAL_ZOOM_ACTIVE, true)
+                 .putInt(KEY_PLAYER_MANUAL_ZOOM_PERCENT, mSurfaceController.getManualZoomPercent())
+@@ -5045,6 +5048,7 @@ public class PlayerActivity extends AppCompatActivity implements PlayerControlle
+             editor.putString(KEY_PLAYER_AUTO_FORMAT, String.valueOf(autoFmt));
+             editor.putBoolean(KEY_PLAYER_MANUAL_ZOOM_ACTIVE, false);
+             editor.apply(); // commit is blocking .. avoid
++            if (mPlayer != null) mPlayer.updateManualZoomOutput();
+             if (mRefreshTvFormatMenu != null) mRefreshTvFormatMenu.run();
+             // Update the subtitle layout when the video format changes
+             mSubtitleManager.updateSubtitleLayout();
+diff --git a/src/main/java/com/archos/mediacenter/video/player/SurfaceController.java b/src/main/java/com/archos/mediacenter/video/player/SurfaceController.java
+index 9c86a87..229b254 100644
+--- a/src/main/java/com/archos/mediacenter/video/player/SurfaceController.java
++++ b/src/main/java/com/archos/mediacenter/video/player/SurfaceController.java
+@@ -20,6 +20,12 @@ import com.archos.medialib.IMediaPlayer;
+ 
+ import android.view.SurfaceHolder;
+ import android.view.SurfaceView;
++import android.content.Context;
++import android.content.pm.PackageManager;
++import android.content.res.Configuration;
++import android.graphics.Matrix;
++import android.graphics.SurfaceTexture;
++import android.os.Build;
+ import android.view.TextureView;
+ import android.view.View;
+ import android.view.ViewGroup;
+@@ -83,6 +89,12 @@ public class SurfaceController {
+     private View mView;
+     private SurfaceView mSurfaceView = null;
+     private TextureView mEffectView = null;
++    private final TextureView mDirectZoomView;
++    private final View mDirectZoomBackdrop;
++    private final boolean mLegacyTvDevice;
++    private boolean mDirectZoomOutput;
++    private boolean mProjectorMode;
++    private SurfaceHolder.Callback mVideoSurfaceCallback;
+     private TextureView mSubtitleView = null; // NEW: The OpenGL Subtitle Layer
+     private IMediaPlayer mMediaPlayer = null;
+     private SurfaceController.Listener      mSurfaceListener;
+@@ -168,6 +180,14 @@ public class SurfaceController {
+  
+         mEffectView =  (TextureView) mLp.findViewById(R.id.gl_surface_view);
+         mSurfaceView =  (SurfaceView) mLp.findViewById(R.id.surface_view);
++        mDirectZoomView = mLp.findViewById(R.id.manual_zoom_texture);
++        mDirectZoomBackdrop = mLp.findViewById(R.id.manual_zoom_backdrop);
++        Context context = rootView.getContext();
++        mLegacyTvDevice = Build.VERSION.SDK_INT == Build.VERSION_CODES.P && ((
++                context.getResources().getConfiguration().uiMode & Configuration.UI_MODE_TYPE_MASK)
++                == Configuration.UI_MODE_TYPE_TELEVISION
++                || context.getPackageManager().hasSystemFeature(PackageManager.FEATURE_LEANBACK));
++        if (mDirectZoomView != null) mDirectZoomView.setOpaque(false);
+         mSubtitleView = (TextureView) mLp.findViewById(R.id.gl_subtitle_view); // NEW
+         // --- NATIVE OPENGL UPGRADE FIX ---
+         // CRITICAL: TextureViews are opaque by default! If we don't set this to false,
+@@ -185,19 +205,54 @@ public class SurfaceController {
+         }
+     }
+   
+-    public void setGLSupportEnabled(boolean enable){
++    public void setGLSupportEnabled(boolean enable) {
+         if (log.isDebugEnabled()) log.debug("setGLSupportEnabled: {}", enable);
+         if (mEffectEnable == enable) return;
+-        mView.setVisibility(View.GONE);
+-        if (enable) {
+-            //Need openGL, let's use TextureView
+-            mView = mEffectView;
+-        } else {
+-            //Do not need openGL, let's use SurfaceView
+-            mView = mSurfaceView;
+-        }
+-        mView.setVisibility(View.VISIBLE);
+         mEffectEnable = enable;
++        if (enable) mDirectZoomOutput = false;
++        updateOutputView();
++    }
++
++    boolean usesGlEffectOutput() { return mEffectEnable; }
++
++    boolean canUseDirectZoomOutput(boolean sdr, boolean outputRejected) {
++        boolean normal = mDirectZoomView != null && mView.isHardwareAccelerated()
++                && !mEffectEnable && mEffectType == VideoEffect.EFFECT_NONE
++                && mEffectMode == VideoEffect.NORMAL_2D_MODE && !mHdmiPlugged && !mProjectorMode;
++        return LegacyTvManualZoom.useTexture(Build.VERSION.SDK_INT, mLegacyTvDevice, normal,
++                mManualZoomActive, sdr, outputRejected);
++    }
++
++    boolean isDirectZoomOutput() { return mDirectZoomOutput; }
++
++    void setDirectZoomOutput(boolean enable) {
++        boolean active = enable && mDirectZoomView != null && !mEffectEnable;
++        if (mDirectZoomOutput == active) return;
++        mDirectZoomOutput = active;
++        updateOutputView();
++    }
++
++    private void updateOutputView() {
++        View target = mEffectEnable ? mEffectView : mDirectZoomOutput ? mDirectZoomView : mSurfaceView;
++        if (mDirectZoomBackdrop != null) {
++            mDirectZoomBackdrop.setVisibility(target == mDirectZoomView ? View.VISIBLE : View.GONE);
++        }
++        if (target != mView) {
++            View previous = mView;
++            mView = target;
++            previous.setVisibility(View.GONE);
++            target.setVisibility(View.VISIBLE);
++            // TextureView may retain its SurfaceTexture while GONE; in that
++            // case visibility alone does not produce a fresh available callback.
++            if (target == mDirectZoomView && mDirectZoomView.isAvailable()) {
++                TextureView.SurfaceTextureListener listener = mDirectZoomView.getSurfaceTextureListener();
++                if (listener != null) listener.onSurfaceTextureAvailable(mDirectZoomView.getSurfaceTexture(),
++                        mDirectZoomView.getWidth(), mDirectZoomView.getHeight());
++            } else if (target == mSurfaceView && mVideoSurfaceCallback != null
++                    && mSurfaceView.getHolder().getSurface().isValid()) {
++                mVideoSurfaceCallback.surfaceCreated(mSurfaceView.getHolder());
++            }
++        }
+         updateSurface();
+     }
+     synchronized public void setMediaPlayer(IMediaPlayer player) {
+@@ -205,7 +260,12 @@ public class SurfaceController {
+         updateSurface();
+     }
+ 
++    boolean isSelectedSurfaceHolder(SurfaceHolder holder) {
++        return mView == mSurfaceView && mSurfaceView != null && mSurfaceView.getHolder() == holder;
++    }
++
+     public void setSurfaceCallback(SurfaceHolder.Callback callback) {
++        mVideoSurfaceCallback = callback;
+         if (mSurfaceView != null) {
+             SurfaceHolder holder = mSurfaceView.getHolder();
+             holder.addCallback(callback);
+@@ -215,9 +275,11 @@ public class SurfaceController {
+     }
+     
+     public void clearCallbacks(SurfaceHolder.Callback surface, TextureView.SurfaceTextureListener texture) {
++        if (mVideoSurfaceCallback == surface) mVideoSurfaceCallback = null;
+         if (mSurfaceView != null) mSurfaceView.getHolder().removeCallback(surface);
+         if (mEffectView != null && mEffectView.getSurfaceTextureListener() == texture)
+             mEffectView.setSurfaceTextureListener(null);
++        if (mDirectZoomView != null) mDirectZoomView.setSurfaceTextureListener(null);
+     }
+ 
+     public boolean supportOpenGLVideoEffect() {
+@@ -225,13 +287,34 @@ public class SurfaceController {
+         return (mEffectView == mView) && (VideoEffect.openGLRequested(mEffectType));
+     }
+ 
+-    public void setTextureCallback(TextureView.SurfaceTextureListener callback) {
++    public void setTextureCallback(Player callback) {
+         if (mEffectView != null) {
+             mEffectView.setSurfaceTextureListener(callback);
+             if (mView == mEffectView && mEffectView.isAvailable())
+                 callback.onSurfaceTextureAvailable(mEffectView.getSurfaceTexture(),
+                         mEffectView.getWidth(), mEffectView.getHeight());
+         }
++        if (mDirectZoomView != null) {
++            mDirectZoomView.setSurfaceTextureListener(new TextureView.SurfaceTextureListener() {
++                @Override public void onSurfaceTextureAvailable(SurfaceTexture surface, int width, int height) {
++                    if (mDirectZoomOutput) callback.onDirectZoomTextureAvailable(surface, width, height);
++                }
++
++                @Override public void onSurfaceTextureSizeChanged(SurfaceTexture surface, int width, int height) {
++                    callback.onDirectZoomTextureSizeChanged(surface, width, height);
++                }
++
++                @Override public boolean onSurfaceTextureDestroyed(SurfaceTexture surface) {
++                    return callback.onDirectZoomTextureDestroyed(surface);
++                }
++
++                @Override public void onSurfaceTextureUpdated(SurfaceTexture surface) {}
++            });
++            if (mDirectZoomOutput && mDirectZoomView.isAvailable()) {
++                callback.onDirectZoomTextureAvailable(mDirectZoomView.getSurfaceTexture(),
++                        mDirectZoomView.getWidth(), mDirectZoomView.getHeight());
++            }
++        }
+     }
+ 
+     public void setSubtitleTextureCallback(TextureView.SurfaceTextureListener callback) {
+@@ -384,6 +467,7 @@ public class SurfaceController {
+     }
+     
+     public void setProjectorMode(boolean projectorMode){
++        mProjectorMode = projectorMode;
+         //Get the layout paramters for the Views.
+         FrameLayout.LayoutParams paramsEffect = (FrameLayout.LayoutParams) mEffectView.getLayoutParams();
+         FrameLayout.LayoutParams paramsSurface = (FrameLayout.LayoutParams) mSurfaceView.getLayoutParams();
+@@ -623,7 +707,19 @@ public class SurfaceController {
+ 
+         ViewGroup.LayoutParams lp = mView.getLayoutParams();
+         ViewGroup.LayoutParams subLp = mSubtitleView != null ? mSubtitleView.getLayoutParams() : null; // NEW
+-        if (lp instanceof ViewGroup.MarginLayoutParams marginParams) {
++        if (mDirectZoomOutput && mView == mDirectZoomView) {
++            LegacyTvManualZoom.Transform transform = LegacyTvManualZoom.transform(dcwMax, dchMax, dcw, dch);
++            if (transform != null) {
++                Matrix matrix = new Matrix();
++                matrix.setScale(transform.scaleX, transform.scaleY, transform.pivotX, transform.pivotY);
++                mDirectZoomView.setTransform(matrix);
++                lp.width = dcwMax;
++                lp.height = dchMax;
++                if (lp instanceof ViewGroup.MarginLayoutParams margins)
++                    margins.setMargins(mMarginLeft, mMarginTop, 0, 0);
++                mDirectZoomView.setLayoutParams(lp);
++            }
++        } else if (lp instanceof ViewGroup.MarginLayoutParams marginParams) {
+             if (log.isDebugEnabled()) log.debug("MARC works with MarginLayoutParams"); // TODO MARC it works!!!
+             lp.width = dcw;
+             lp.height = dch;
+diff --git a/src/test/java/com/archos/mediacenter/video/player/LegacyTvManualZoomApi28Test.java b/src/test/java/com/archos/mediacenter/video/player/LegacyTvManualZoomApi28Test.java
+new file mode 100644
+index 0000000..89ba95c
+--- /dev/null
++++ b/src/test/java/com/archos/mediacenter/video/player/LegacyTvManualZoomApi28Test.java
+@@ -0,0 +1,124 @@
++/* SPDX-License-Identifier: Apache-2.0 */
++package com.archos.mediacenter.video.player;
++
++import static org.junit.Assert.assertEquals;
++import static org.junit.Assert.assertFalse;
++import static org.junit.Assert.assertNull;
++import static org.junit.Assert.assertSame;
++import static org.junit.Assert.assertTrue;
++import static org.mockito.Mockito.mock;
++
++import android.app.Activity;
++import android.app.Application;
++import android.graphics.Color;
++import android.graphics.Matrix;
++import android.graphics.drawable.ColorDrawable;
++import android.graphics.SurfaceTexture;
++import android.os.Handler;
++import android.os.Looper;
++import android.view.LayoutInflater;
++import android.view.TextureView;
++import android.view.View;
++import android.view.ViewGroup;
++
++import com.archos.medialib.IMediaPlayer;
++import com.archos.mediacenter.video.R;
++
++import org.junit.Test;
++import org.junit.runner.RunWith;
++import org.robolectric.Robolectric;
++import org.robolectric.RobolectricTestRunner;
++import org.robolectric.annotation.Config;
++import org.robolectric.util.ReflectionHelpers;
++
++import java.lang.reflect.Field;
++import java.lang.reflect.Method;
++
++@RunWith(RobolectricTestRunner.class)
++@Config(sdk = 28, application = Application.class)
++public class LegacyTvManualZoomApi28Test {
++    @Test
++    public void directTextureStaysViewportSizedButMappingCropsCenterAndSubtitlesKeepVideoBounds() {
++        Activity activity = Robolectric.buildActivity(Activity.class).setup().get();
++        ViewGroup root = (ViewGroup) LayoutInflater.from(activity).inflate(R.layout.player, null);
++        activity.setContentView(root);
++        SurfaceController surface = new SurfaceController(root);
++        surface.setScreenSize(1920, 1080);
++        surface.setVideoSize(1920, 1080, 1.0);
++        surface.setMediaPlayer(mock(IMediaPlayer.class));
++        surface.setManualZoom(true, 150);
++        surface.setDirectZoomOutput(true);
++        TextureView target = root.findViewById(R.id.manual_zoom_texture);
++        assertSame(target, surface.getView());
++        assertEquals(View.VISIBLE, target.getVisibility());
++        View backdrop = root.findViewById(R.id.manual_zoom_backdrop);
++        assertEquals(View.VISIBLE, backdrop.getVisibility());
++        assertEquals(Color.BLACK, ((ColorDrawable) backdrop.getBackground()).getColor());
++        assertFalse(surface.supportOpenGLVideoEffect());
++        assertEquals(1920, target.getLayoutParams().width);
++        assertEquals(1080, target.getLayoutParams().height);
++        assertEquals(2880, surface.getViewWidth());
++        assertEquals(1620, surface.getViewHeight());
++        assertEquals(-480, surface.getVideoBoxLeft());
++        assertEquals(-270, surface.getVideoBoxTop());
++
++        Matrix matrix = target.getTransform(new Matrix());
++        float[] points = {0, 0, 960, 540, 1920, 1080};
++        matrix.mapPoints(points);
++        float[] expected = {-480, -270, 960, 540, 2400, 1350};
++        for (int i = 0; i < points.length; i++) assertEquals(expected[i], points[i], 0.05f);
++
++        surface.setManualZoom(true, 151);
++        assertSame(target, surface.getView());
++        assertEquals(1920, target.getLayoutParams().width);
++        assertEquals(1080, target.getLayoutParams().height);
++        assertEquals(2899, surface.getViewWidth());
++        assertEquals(1631, surface.getViewHeight());
++
++        surface.setGLSupportEnabled(true);
++        assertFalse(surface.isDirectZoomOutput());
++        assertEquals(View.GONE, backdrop.getVisibility());
++        assertSame(root.findViewById(R.id.gl_surface_view), surface.getView());
++        surface.setGLSupportEnabled(false);
++        assertSame(root.findViewById(R.id.surface_view), surface.getView());
++    }
++
++    @Test
++    public void directCallbackBindsRawProducerAndClearsOnlyThatTextureOnDestroy() throws Exception {
++        Activity activity = Robolectric.buildActivity(Activity.class).setup().get();
++        ViewGroup root = (ViewGroup) LayoutInflater.from(activity).inflate(R.layout.player, null);
++        SurfaceController surface = new SurfaceController(root);
++        Player player = emptyPlayer();
++        ReflectionHelpers.setField(player, "mContext", activity);
++        ReflectionHelpers.setField(player, "mHandler", new Handler(Looper.getMainLooper()));
++        ReflectionHelpers.setField(player, "mSurfaceController", surface);
++        surface.setTextureCallback(player);
++        TextureView view = root.findViewById(R.id.manual_zoom_texture);
++        TextureView.SurfaceTextureListener direct = view.getSurfaceTextureListener();
++        SurfaceTexture texture = new SurfaceTexture(7);
++        SurfaceTexture other = new SurfaceTexture(8);
++        surface.setDirectZoomOutput(true);
++        try {
++            direct.onSurfaceTextureAvailable(texture, 1920, 1080);
++            assertSame(texture, ReflectionHelpers.getField(player, "mVideoTexture"));
++            assertNull(ReflectionHelpers.getField(player, "mEffectRenderer"));
++            assertNull(ReflectionHelpers.getField(player, "mUISurface"));
++            assertTrue(direct.onSurfaceTextureDestroyed(other));
++            assertSame(texture, ReflectionHelpers.getField(player, "mVideoTexture"));
++            assertTrue(direct.onSurfaceTextureDestroyed(texture));
++            assertNull(ReflectionHelpers.getField(player, "mVideoTexture"));
++        } finally {
++            texture.release();
++            other.release();
++        }
++    }
++
++    private static Player emptyPlayer() throws Exception {
++        // Do not try to load the device AVOS .so in app-side JVM tests.
++        Class<?> unsafeClass = Class.forName("sun.misc.Unsafe");
++        Field instance = unsafeClass.getDeclaredField("theUnsafe");
++        instance.setAccessible(true);
++        Method allocate = unsafeClass.getMethod("allocateInstance", Class.class);
++        return (Player) allocate.invoke(instance.get(null), Player.class);
++    }
++}
+diff --git a/test/LegacyTvManualZoomTest.java b/test/LegacyTvManualZoomTest.java
+new file mode 100644
+index 0000000..6fcacc8
+--- /dev/null
++++ b/test/LegacyTvManualZoomTest.java
+@@ -0,0 +1,46 @@
++/* SPDX-License-Identifier: Apache-2.0 */
++package com.archos.mediacenter.video.player;
++
++public final class LegacyTvManualZoomTest {
++    public static void main(String[] args) {
++        check(LegacyTvManualZoom.useTexture(28, true, true, true, true, false));
++        check(!LegacyTvManualZoom.useTexture(29, true, true, true, true, false));
++        check(!LegacyTvManualZoom.useTexture(28, false, true, true, true, false));
++        check(!LegacyTvManualZoom.useTexture(28, true, false, true, true, false));
++        check(!LegacyTvManualZoom.useTexture(28, true, true, false, true, false));
++        check(!LegacyTvManualZoom.useTexture(28, true, true, true, false, false));
++        check(!LegacyTvManualZoom.useTexture(28, true, true, true, true, true));
++        check(LegacyTvManualZoom.isSafeSdr(1, "H.265", 0));
++        check(LegacyTvManualZoom.isSafeSdr(0, "H.264", 0));
++        check(LegacyTvManualZoom.isSafeSdr(2, "AVC", 0));
++        check(!LegacyTvManualZoom.isSafeSdr(0, "HEVC", 0));
++        check(!LegacyTvManualZoom.isSafeSdr(16, "H.264", 0));
++        check(!LegacyTvManualZoom.isSafeSdr(18, "H.265", 0));
++        check(!LegacyTvManualZoom.isSafeSdr(1, "Dolby Vision", 0));
++        check(!LegacyTvManualZoom.isSafeSdr(1, "H.264", 1));
++
++        LegacyTvManualZoom.Transform same = LegacyTvManualZoom.transform(1920, 1080, 1920, 1080);
++        close(same.scaleX, 1);
++        close(same.scaleY, 1);
++        close(same.pivotX, 960);
++        close(same.pivotY, 540);
++        LegacyTvManualZoom.Transform zoomed = LegacyTvManualZoom.transform(1920, 1080, 2880, 1620);
++        close(zoomed.scaleX, 1.5);
++        close(zoomed.scaleY, 1.5);
++        close(zoomed.pivotX, 960);
++        close(zoomed.pivotY, 540);
++        LegacyTvManualZoom.Transform wide = LegacyTvManualZoom.transform(1920, 1080, 1920, 800);
++        close(wide.scaleX, 1);
++        close(wide.scaleY, 800.0 / 1080);
++        check(LegacyTvManualZoom.transform(0, 1080, 1920, 1080) == null);
++        System.out.println("Android 9 TV renderer scope, HDR/stereo guards, and bounded center transform passed");
++    }
++
++    private static void close(double actual, double expected) {
++        check(Math.abs(actual - expected) < 0.0001);
++    }
++
++    private static void check(boolean expression) {
++        if (!expression) throw new AssertionError("Incorrect legacy TV zoom renderer policy");
++    }
++}

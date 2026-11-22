@@ -14,18 +14,20 @@ for p in Video MediaLib FileCoreLibrary; do
 done
 git -C "$src/Video" apply "$root/patches/Video-zoom.patch"
 git -C "$src/Video" apply "$root/patches/Video-subtitle-memory-discovery.patch" "$root/patches/Video-subtitle-memory-selection.patch"
+git -C "$src/Video" apply "$root/patches/Video-zoom-renderer-fix.patch"
 (
     cd "$src/Video"
     jvm=$(mktemp -d "$src/test.XXXXXX")
     pkg=src/main/java/com/archos/mediacenter/video/player
     android_jar="$sdk/platforms/android-37.0/android.jar"
     javac -cp "$android_jar" -d "$jvm" "$pkg/VideoDisplayMode.java" "$pkg/VideoZoomLayout.java" \
-        "$pkg/SubtitleDelayPreference.java" "$pkg/SubtitleMemoryPolicy.java" \
+        "$pkg/SubtitleDelayPreference.java" "$pkg/SubtitleMemoryPolicy.java" "$pkg/LegacyTvManualZoom.java" \
         "$pkg/../browser/subtitlesmanager/LocalSubtitleMatch.java" \
-        test/VideoZoomLayoutTest.java test/SubtitleDelayPreferenceTest.java test/SubtitleMemoryPolicyTest.java
+        test/VideoZoomLayoutTest.java test/SubtitleDelayPreferenceTest.java test/SubtitleMemoryPolicyTest.java test/LegacyTvManualZoomTest.java
     java -cp "$jvm:$android_jar" com.archos.mediacenter.video.player.VideoZoomLayoutTest
     java -cp "$jvm:$android_jar" com.archos.mediacenter.video.player.SubtitleDelayPreferenceTest
     java -cp "$jvm:$android_jar" com.archos.mediacenter.video.player.SubtitleMemoryPolicyTest
+    java -cp "$jvm:$android_jar" com.archos.mediacenter.video.player.LegacyTvManualZoomTest
     bash ./gradlew --no-daemon --max-workers=4 --console=plain -Psponsor assembleNoamazonRelease lintNoamazonRelease -x :FileCoreLibrary:ndkBuild -x :MediaLib:ndkBuild
 )
 shopt -s nullglob
@@ -41,6 +43,10 @@ for abi in armeabi-v7a arm64-v8a; do
     "$sdk/build-tools/37.0.0/aapt" dump badging "$apk" > "$out/badging-$abi.txt"
     grep -Fq "package: name='org.courville.nova.zoom'" "$out/badging-$abi.txt"
     grep -Eq "versionCode='[0-9]+' versionName='6\.6\.5([-'])" "$out/badging-$abi.txt"
+    code=$(sed -nE "s/^package:.*versionCode='([0-9]+)'.*/\1/p" "$out/badging-$abi.txt")
+    (( code >= 2675845 ))
+    [[ -z ${previous_abi_code:-} || "$code" == "$previous_abi_code" ]]
+    previous_abi_code=$code
     grep -Fq 'leanback-launchable-activity:' "$out/badging-$abi.txt"
     grep -Fxq "native-code: '$abi' " "$out/badging-$abi.txt" || grep -Fxq "native-code: '$abi'" "$out/badging-$abi.txt"
     ! grep -Eq '^(application-debuggable|split:)' "$out/badging-$abi.txt"
