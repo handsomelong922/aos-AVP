@@ -16,7 +16,7 @@ index 24531edaf1a9656fad6d2b8e021fbc529fb6f2d4..a0ed48dfef4b9e3f9c4d1830df9a170c
          <provider
              android:name="com.archos.mediacenter.video.browser.SearchProviderVideo"
 -            android:authorities="browser.SearchProviderVideocommunity"
-+            android:authorities="org.courville.nova.zoom.search"
++            android:authorities="org.courville.nova.zoom.next.search"
              android:exported="true"
              android:readPermission="android.permission.GLOBAL_SEARCH" />
  
@@ -25,7 +25,7 @@ index 24531edaf1a9656fad6d2b8e021fbc529fb6f2d4..a0ed48dfef4b9e3f9c4d1830df9a170c
          <provider
              android:name="com.archos.mediaprovider.video.VideoProvider"
 -            android:authorities="com.archos.media.videocommunity;com.archos.media.scrapercommunity"
-+            android:authorities="org.courville.nova.zoom.video;org.courville.nova.zoom.scraper"
++            android:authorities="org.courville.nova.zoom.next.video;org.courville.nova.zoom.next.scraper"
              android:exported="true"
              tools:ignore="ExportedContentProvider" />
          <!-- BroadcastReceiver to trigger database import -->
@@ -46,7 +46,7 @@ index c03ba2da14a14bbadba307535395c2b0f7a8d66a..ca521455fc0379c9ec81fc290b26f147
      }
      defaultConfig {
 -        applicationId = "org.courville.nova"
-+        applicationId = "org.courville.nova.zoom"
++        applicationId = "org.courville.nova.zoom.next"
          generatedDensities = []
          minSdkVersion 23
          targetSdkVersion 36
@@ -55,7 +55,7 @@ index c03ba2da14a14bbadba307535395c2b0f7a8d66a..ca521455fc0379c9ec81fc290b26f147
              versionName = versionName + "-" + getFormattedDate()
              // 2549909 is 20221124 last Google play release to reset counter
 -            versionCode = 2549909 + getDate()
-+            versionCode = Math.max(2675845, 2549909 + getDate())
++            versionCode = Math.max(2676383, 2549909 + getDate())
          }
          //archivesBaseName = "" + applicationId + "-" + versionCode + "-" + versionName
          project.extensions.getByType(BasePluginExtension).archivesName.set(applicationId + "-" + versionCode + "-" + versionName)
@@ -77,7 +77,7 @@ index 42d0bb620d405f58ec7f4e0a8672bf4b09970eea..c577d80a7452e24512811637d796d4e2
      <string name="media_library_import_prefkey">media_library_import_prefkey</string>
  
 -    <string name="nova">Nova Video Player</string>
-+    <string name="nova">NOVA Zoom</string>
++    <string name="nova">NOVA Zoom Next</string>
  
      <string name="resolution_4k">4k</string>
      // do not say p since it can be i too
@@ -90,10 +90,10 @@ index fa90720fc0debddf23b50d45c43bbd4d70630af8..be7055a650969f064f49c0fedf0ad2f0
       android:label="@string/nova"
       android:searchSettingsDescription="@string/all_movies_and_tv_shows"
 -     android:searchSuggestAuthority="com.archos.mediacenter.videocommunity.leanback.search.VideoSearchProvider"
-+     android:searchSuggestAuthority="org.courville.nova.zoom.leanback.search.VideoSearchProvider"
++     android:searchSuggestAuthority="org.courville.nova.zoom.next.leanback.search.VideoSearchProvider"
       android:searchSuggestIntentAction="android.intent.action.VIEW"
 -     android:searchSuggestIntentData="content://com.archos.media/external/video/media"
-+     android:searchSuggestIntentData="content://org.courville.nova.zoom.video/external/video/media"
++     android:searchSuggestIntentData="content://org.courville.nova.zoom.next.video/external/video/media"
       android:searchSuggestSelection=" ?"
       android:searchSuggestThreshold="3"
       android:includeInGlobalSearch="true" >
@@ -106,11 +106,11 @@ index 873ef18a9c37ef2a3a4fb19bc62d6b7fc987270a..bd0137dc0648e2f871046d437c7f2390
              android:label="@string/nova"
              android:includeInGlobalSearch="true"
 -            android:searchSuggestAuthority="browser.SearchProviderVideocommunity"
-+            android:searchSuggestAuthority="org.courville.nova.zoom.search"
++            android:searchSuggestAuthority="org.courville.nova.zoom.next.search"
              android:searchSuggestThreshold="3"
              android:searchSuggestIntentAction="android.intent.action.VIEW"
 -            android:searchSuggestIntentData="content://com.archos.media/external/video/media"
-+            android:searchSuggestIntentData="content://org.courville.nova.zoom.video/external/video/media"
++            android:searchSuggestIntentData="content://org.courville.nova.zoom.next.video/external/video/media"
              android:searchSuggestSelection=" ?"
              android:searchSettingsDescription="@string/all_movies_and_tv_shows"
  />
@@ -123,7 +123,7 @@ index 5f9043078989546c5cda70328f7900e73dd0f2f1..f0769a771a3349282c0260adde4b406c
          <intent
              android:action="com.archos.mediacenter.video.action_resume"
 -            android:targetPackage="com.archos.mediacenter.videocommunity"
-+            android:targetPackage="org.courville.nova.zoom"
++            android:targetPackage="org.courville.nova.zoom.next"
              android:targetClass="com.archos.mediacenter.video.browser.MainActivity" />
      </shortcut>
      <shortcut
@@ -132,7 +132,7 @@ index 5f9043078989546c5cda70328f7900e73dd0f2f1..f0769a771a3349282c0260adde4b406c
          <intent
              android:action="com.archos.mediacenter.video.action_recently_played"
 -            android:targetPackage="com.archos.mediacenter.videocommunity"
-+            android:targetPackage="org.courville.nova.zoom"
++            android:targetPackage="org.courville.nova.zoom.next"
              android:targetClass="com.archos.mediacenter.video.browser.MainActivity" />
      </shortcut>
      <shortcut
@@ -141,7 +141,7 @@ index 5f9043078989546c5cda70328f7900e73dd0f2f1..f0769a771a3349282c0260adde4b406c
          <intent
              android:action="com.archos.mediacenter.video.action_recently_added"
 -            android:targetPackage="com.archos.mediacenter.videocommunity"
-+            android:targetPackage="org.courville.nova.zoom"
++            android:targetPackage="org.courville.nova.zoom.next"
              android:targetClass="com.archos.mediacenter.video.browser.MainActivity" />
      </shortcut>
  </shortcuts>

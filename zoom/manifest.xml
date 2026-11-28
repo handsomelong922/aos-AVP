@@ -7,11 +7,11 @@
   <project name="aos-AVP" path="AVP" revision="1413fbfa1a201feaf880a19227448328e446a2ba" upstream="nova" dest-branch="nova">
     <copyfile src="Makefile" dest="Makefile"/>
   </project>
-  <project name="aos-FileCoreLibrary" path="FileCoreLibrary" revision="9d1f8855a7edfefd4729986d7b26cfd717cbb1b8" upstream="v6.6" dest-branch="v6.6"/>
-  <project name="aos-MediaLib" path="MediaLib" revision="57ead4cfd65a9923ca94431328a022fe121ead70" upstream="v6.6" dest-branch="v6.6"/>
-  <project name="aos-Video" path="Video" revision="6eb7ab98e6acaf52353a7e8d0e1b74d0bd6a3526" upstream="v6.6" dest-branch="v6.6"/>
+  <project name="aos-FileCoreLibrary" path="FileCoreLibrary" revision="53ce480bfbfbc879604c6ad59505926e92dc9134" upstream="v6.6" dest-branch="v6.6"/>
+  <project name="aos-MediaLib" path="MediaLib" revision="0459d2840ee460744955cbb85acf6edaf7adef9d" upstream="v6.6" dest-branch="v6.6"/>
+  <project name="aos-Video" path="Video" revision="51ea31b6d4d9ff476f4dfb58498a016e0f3bb194" upstream="v6.6" dest-branch="v6.6"/>
   <project name="aos-audiocompress" path="native/audiocompress" revision="3a3f9324d2550bd305060e1c52b803121ea09aad" upstream="master" dest-branch="master"/>
-  <project name="aos-avos" path="native/avos" revision="db55db53314cfd3eae07742d9aeec745fa2ce3da" upstream="v6.6" dest-branch="v6.6"/>
+  <project name="aos-avos" path="native/avos" revision="3ce0a5ebadf6feaf952b4d522542f65f9cc0f83e" upstream="v6.6" dest-branch="v6.6"/>
   <project name="aos-boost-android-builder" path="native/boost" revision="43daa8621f4b74239d8fd52a545fe3344f0ff43c" upstream="master" dest-branch="master"/>
   <project name="aos-libnativehelper" path="native/libnativehelper" revision="ab46fb536b594b25f93611ad7ef0f27b8fc24edb" upstream="master" dest-branch="master"/>
   <project name="aos-libtorrent-android-builder" path="native/libtorrent-android-builder" revision="7e2cd1ed460a2a6ca4f5d5e32dde8f37f0cdb431" upstream="main" dest-branch="main"/>
@@ -20,6 +20,7 @@
   <project name="fontconfig-android-builder" path="native/fontconfig-android-builder" revision="c51ce4b686828f75cb33e11875b9d5f2b6891323" upstream="main" dest-branch="main"/>
   <project name="harfbuzz-android-builder" path="native/harfbuzz-android-builder" revision="71fb17057890c01559675dec703440dce472a764" upstream="main" dest-branch="main"/>
   <project name="libass-android-builder" path="native/libass-android-builder" revision="69919b2d3deff70d81e31902e9660f6dbc432273" upstream="main" dest-branch="main"/>
+  <project name="libdovi-android-builder" path="native/libdovi-android-builder" revision="0ec1e9d249941214d1b549a11faf156a15a98d35" upstream="main" dest-branch="main"/>
   <project name="libfreetype-android-builder" path="native/libfreetype-android-builder" revision="60784616139012a42e943929fd1bc32ecf9629a7" upstream="main" dest-branch="main"/>
   <project name="libfribidi-android-builder" path="native/libfribidi-android-builder" revision="e4f95b0756367e9b889811502d93613bc1d679fe" upstream="main" dest-branch="main"/>
   <project name="libmysofa-android-builder" path="native/libmysofa-android-builder" revision="dc97741d01fa3cee8c81312b24bb4414c3f85d5c" upstream="main" dest-branch="main"/>
@@ -35,6 +36,7 @@
   <project name="prebuilt-fribidi" path="native/prebuilt/fribidi" revision="e98837fa4125def4dd2ee9f40c66cbf7646e7eb4" upstream="main" dest-branch="main"/>
   <project name="prebuilt-harfbuzz" path="native/prebuilt/harfbuzz" revision="946eebc3130822bf6e620847120ff20eb81df274" upstream="main" dest-branch="main"/>
   <project name="prebuilt-libass" path="native/prebuilt/libass" revision="e2a856c061bfb22569b815eb7b3c5581037e208c" upstream="main" dest-branch="main"/>
+  <project name="prebuilt-libdovi" path="native/prebuilt/libdovi" revision="5ced583abb2f0889b28e708ac5752c25656a70eb" upstream="main" dest-branch="main"/>
   <project name="prebuilt-libmysofa" path="native/prebuilt/libmysofa" revision="ee9ba48ad4fb347c77d016662bc4744f5b677367" upstream="v1_3" dest-branch="v1_3"/>
   <project name="prebuilt-libpng" path="native/prebuilt/libpng" revision="bd3a2ed5450521783451252b9fc77c25832e88d1" upstream="main" dest-branch="main"/>
   <project name="prebuilt-libunibreak" path="native/prebuilt/libunibreak" revision="afcf4bc13971ef204f6995c66102a891a54f96a1" upstream="main" dest-branch="main"/>

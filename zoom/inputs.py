@@ -9,13 +9,13 @@ import xml.etree.ElementTree as ET
 import zipfile
 
 BASE = "https://github.com/nova-video-player"
-VERSION = "v6.6.5"
-MANIFEST_SHA = "3f44be0bf07634b469cde54f37b47421735f88fd191d7ac3afbfbd3f9c0aa61c"
+VERSION = "v6.6.6"
+MANIFEST_SHA = "13232f2249d8753945c2eb33680f54ff48cb1d856ee94e37d645c01838e44647"
 SOURCE = {"AVP": "aos-AVP", "Video": "aos-Video", "MediaLib": "aos-MediaLib",
           "FileCoreLibrary": "aos-FileCoreLibrary"}
 APK_HASH = {
-    "armeabi-v7a": "9fb146566d8fb70ec5ed03ea180aa10abf294eea7a52a4eafc17634eb20e7143",
-    "arm64-v8a": "e0ffda4c5f3795d75e89b3c7a8c6da792839ebd21dcb46b50cf3248c3d9157b9",
+    "armeabi-v7a": "b01d33e02e3a049b97036484e5b574a32b4bb306ed65b5ea0fc4e3547dfaadea",
+    "arm64-v8a": "ad7caf96b407e5c941fc7fec949d248e87b6b2a62d8b2012a547da02f854553e",
 }
 DEPENDENCY_LIBS = {"libsentry.so", "libsentry-android.so"}
 
@@ -66,7 +66,7 @@ def prepare(root, work):
         run(*git, "-c", "core.hooksPath=/dev/null", "checkout", "--quiet", "--detach", "FETCH_HEAD")
         require(run(*git, "rev-parse", "HEAD") == rev, f"Wrong source at {directory}")
     for abi, expected in APK_HASH.items():
-        name = f"org.courville.nova-2674922-6.6.5-20261111.1224-{abi}-release.apk"
+        name = f"org.courville.nova-2676333-6.6.6-20261127.2019-{abi}-release.apk"
         dest = work / f"{abi}-official.apk"
         run("curl", "--proto", "=https", "--proto-redir", "=https", "-fsSL", "--retry", "3",
             "--max-time", "300", "-o", str(dest), f"{BASE}/aos-AVP/releases/download/{VERSION}/{name}")

@@ -37,14 +37,14 @@ apks=("$build"/*.apk)
 for abi in armeabi-v7a arm64-v8a; do
     bin=("$build"/*-"$abi"-*unsigned.apk)
     [[ ${#bin[@]} == 1 ]]
-    apk="$out/NOVA-Zoom-v6.6.5-$abi-unsigned.apk"
+    apk="$out/NOVA-Zoom-v6.6.6-$abi-unsigned.apk"
     "$sdk/build-tools/37.0.0/zipalign" -P 16 -f 4 "${bin[0]}" "$apk"
     "$sdk/build-tools/37.0.0/zipalign" -c -P 16 4 "$apk"
     "$sdk/build-tools/37.0.0/aapt" dump badging "$apk" > "$out/badging-$abi.txt"
-    grep -Fq "package: name='org.courville.nova.zoom'" "$out/badging-$abi.txt"
-    grep -Eq "versionCode='[0-9]+' versionName='6\.6\.5([-'])" "$out/badging-$abi.txt"
+    grep -Fq "package: name='org.courville.nova.zoom.next'" "$out/badging-$abi.txt"
+    grep -Eq "versionCode='[0-9]+' versionName='6\.6\.6([-'])" "$out/badging-$abi.txt"
     code=$(sed -nE "s/^package:.*versionCode='([0-9]+)'.*/\1/p" "$out/badging-$abi.txt")
-    (( code >= 2675845 ))
+    (( code > 2676382 ))
     [[ -z ${previous_abi_code:-} || "$code" == "$previous_abi_code" ]]
     previous_abi_code=$code
     grep -Fq 'leanback-launchable-activity:' "$out/badging-$abi.txt"
